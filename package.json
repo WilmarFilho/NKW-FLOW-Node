@@ -1,0 +1,13 @@
+{
+  "name": "sse-server",
+  "version": "1.0.0",
+  "description": "Servidor SSE para comunicação com React via n8n",
+  "main": "sse-server.js",
+  "scripts": {
+    "start": "node sse-server.js"
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "express": "^4.18.2"
+  }
+}
