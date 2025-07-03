@@ -1,5 +1,6 @@
 const express = require('express');
 const cors = require('cors');
+const atendentesRoutes = require('./routes/atendentes');
 
 const app = express();
 app.use(cors());
@@ -40,6 +41,12 @@ app.post('/dispatch', (req, res) => {
 
   res.status(200).send('ok, enviado');
 });
+
+
+// ROTAS REST
+app.use('/atendentes', atendentesRoutes);
+
+
 
 const PORT = 5679;
 app.listen(PORT, '0.0.0.0', () => {
