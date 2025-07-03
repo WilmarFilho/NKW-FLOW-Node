@@ -1,6 +1,7 @@
 const express = require('express');
 const cors = require('cors');
 const atendentesRoutes = require('./routes/atendentes');
+const agentesRoutes = require('./routes/agentes');
 
 const app = express();
 app.use(cors());
@@ -45,6 +46,7 @@ app.post('/dispatch', (req, res) => {
 
 // ROTAS REST
 app.use('/atendentes', atendentesRoutes);
+app.use('/agentes', agentesRoutes);
 
 
 
