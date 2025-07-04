@@ -4,12 +4,15 @@ const db = require('../db');
 
 // Listar agentes
 router.get('/', async (req, res) => {
-  try {
-    const result = await db.query('SELECT * FROM atendentes');
-    res.json(result.rows);
-  } catch (err) {
-    res.status(500).json({ error: 'Erro ao buscar atendentes' });
-  }
+  return res.json([
+    {
+      id: 20,
+      nome: 'Vendas',
+      descricao: 'Para realizar atendimentos de vendedores',
+      criado_em: '04/04/2025',
+      ativo: true,
+    },
+  ]);
 });
 
 module.exports = router;
