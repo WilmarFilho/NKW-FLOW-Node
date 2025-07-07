@@ -3,6 +3,7 @@ const cors = require('cors');
 const atendentesRoutes = require('./routes/atendentes');
 const agentesRoutes = require('./routes/agentes');
 const connectionsRoutes = require('./routes/connections');
+const helpRoutes = require("./routes/helpRoutes");
 
 const app = express();
 app.use(cors());
@@ -49,6 +50,7 @@ app.post('/dispatch', (req, res) => {
 app.use('/atendentes', atendentesRoutes);
 app.use('/agentes', agentesRoutes);
 app.use('/connections', connectionsRoutes);
+app.use("/api/help", helpRoutes);
 
 
 
