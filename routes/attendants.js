@@ -1,49 +1,75 @@
+
 const express = require('express');
 const router = express.Router();
-const db = require('../db');
+const { createClient } = require('@supabase/supabase-js');
+require('dotenv').config();
 
-// Listar atendentes
-router.get('/', async (req, res) => {
-  return res.json([
-    {
-      id: 20,
-      nome: 'Roberto',
-      email: 'roberto@gmail.com',
-      criado_em: '04/04/2025',
-      ativo: true,
-    },
-    {
-      id: 20,
-      nome: 'Roberto',
-      email: 'roberto@gmail.com',
-      criado_em: '04/04/2025',
-      ativo: true,
-    },
-  ]);
-});
+const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_KEY);
 
 // Criar atendente
 router.post('/', async (req, res) => {
-  const { nome, email } = req.body;
-  try {
-    const result = await db.query(
-      'INSERT INTO atendentes (nome, email) VALUES ($1, $2) RETURNING *',
-      [nome, email]
-    );
-    res.json(result.rows[0]);
-  } catch (err) {
-    res.status(500).json({ error: 'Erro ao criar atendente' });
-  }
+  const { user_admin_id, user_id, status } = req.body;
+  const { data, error } = await supabase
+    .from('attendants')
+    .insert([{ user_admin_id, user_id, status }])
+    .select();
+
+  if (error) return res.status(500).send(error.message);
+  res.status(201).json(data);
 });
 
-// Remover atendente
+// Listar atendentes com usuários relacionados
+router.get('/', async (req, res) => {
+  const { data, error } = await supabase
+    .from('attendants')
+    .select(`
+      *,
+      user_admin:users!attendants_user_admin_id_fkey(id, nome, email),
+      user:users!attendants_user_id_fkey(id, nome, email)
+    `);
+
+  if (error) return res.status(500).send(error.message);
+  res.json(data);
+});
+
+// Buscar atendente por ID
+router.get('/:id', async (req, res) => {
+  const { id } = req.params;
+  const { data, error } = await supabase
+    .from('attendants')
+    .select(`
+      *,
+      user_admin:users!attendants_user_admin_id_fkey(id, nome, email),
+      user:users!attendants_user_id_fkey(id, nome, email)
+    `)
+    .eq('id', id)
+    .single();
+
+  if (error) return res.status(500).send(error.message);
+  res.json(data);
+});
+
+// Atualizar atendente
+router.put('/:id', async (req, res) => {
+  const { id } = req.params;
+  const { user_admin_id, user_id, status } = req.body;
+
+  const { data, error } = await supabase
+    .from('attendants')
+    .update({ user_admin_id, user_id, status })
+    .eq('id', id)
+    .select();
+
+  if (error) return res.status(500).send(error.message);
+  res.json(data);
+});
+
+// Deletar atendente
 router.delete('/:id', async (req, res) => {
-  try {
-    await db.query('DELETE FROM atendentes WHERE id = $1', [req.params.id]);
-    res.status(204).end();
-  } catch (err) {
-    res.status(500).json({ error: 'Erro ao excluir atendente' });
-  }
+  const { id } = req.params;
+  const { error } = await supabase.from('attendants').delete().eq('id', id);
+  if (error) return res.status(500).send(error.message);
+  res.status(200).send('Atendente deletado com sucesso');
 });
 
 module.exports = router;
