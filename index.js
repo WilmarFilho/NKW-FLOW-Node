@@ -2,8 +2,9 @@ require('dotenv').config();
 
 const express = require('express');
 const cors = require('cors');
-const atendentesRoutes = require('./routes/atendentes');
-const agentesRoutes = require('./routes/agentes');
+const usersRoutes = require('./routes/users');
+const attendantsRoutes = require('./routes/attendants');
+const agentsRoutes = require('./routes/agents');
 const connectionsRoutes = require('./routes/connections');
 const helpRoutes = require("./routes/helpRoutes");
 
@@ -49,8 +50,9 @@ app.post('/dispatch', (req, res) => {
 
 
 // ROTAS REST
-app.use('/atendentes', atendentesRoutes);
-app.use('/agentes', agentesRoutes);
+app.use('/users', usersRoutes);
+app.use('/attendants', attendantsRoutes);
+app.use('/agents', agentsRoutes);
 app.use('/connections', connectionsRoutes);
 app.use("/api/help", helpRoutes);
 

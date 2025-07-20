@@ -7,10 +7,10 @@ const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_KEY
 
 // Criar agente
 router.post('/', async (req, res) => {
-  const { tipo_de_agente, prompt_do_agente } = req.body;
+  const { tipo_de_agente, descricao, prompt_do_agente } = req.body;
   const { data, error } = await supabase
-    .from('agentes')
-    .insert([{ tipo_de_agente, prompt_do_agente }])
+    .from('agents')
+    .insert([{ tipo_de_agente, descricao, prompt_do_agente }])
     .select();
   if (error) return res.status(500).json({ error: error.message });
   res.status(201).json(data);
@@ -18,7 +18,7 @@ router.post('/', async (req, res) => {
 
 // Listar todos os agentes
 router.get('/', async (req, res) => {
-  const { data, error } = await supabase.from('agentes').select('*');
+  const { data, error } = await supabase.from('agents').select('*');
   if (error) return res.status(500).json({ error: error.message });
   res.json(data);
 });
@@ -26,9 +26,9 @@ router.get('/', async (req, res) => {
 // Atualizar agente
 router.put('/:id', async (req, res) => {
   const { id } = req.params;
-  const { tipo_de_agente, prompt_do_agente } = req.body;
+  const { tipo_de_agente, descricao, prompt_do_agente } = req.body;
   const { data, error } = await supabase
-    .from('agentes')
+    .from('agents')
     .update({ tipo_de_agente, prompt_do_agente })
     .eq('id', id)
     .select();
@@ -39,7 +39,7 @@ router.put('/:id', async (req, res) => {
 // Deletar agente
 router.delete('/:id', async (req, res) => {
   const { id } = req.params;
-  const { error } = await supabase.from('agentes').delete().eq('id', id);
+  const { error } = await supabase.from('agents').delete().eq('id', id);
   if (error) return res.status(500).json({ error: error.message });
   res.status(200).send('Deletado com sucesso');
 });
