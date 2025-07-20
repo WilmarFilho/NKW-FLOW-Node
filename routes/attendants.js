@@ -67,9 +67,32 @@ router.put('/:id', async (req, res) => {
 // Deletar atendente
 router.delete('/:id', async (req, res) => {
   const { id } = req.params;
-  const { error } = await supabase.from('attendants').delete().eq('id', id);
-  if (error) return res.status(500).send(error.message);
-  res.status(200).send('Atendente deletado com sucesso');
-});
 
+  // 1. Buscar atendente
+  const { data: atendente, error: findError } = await supabase
+    .from('attendants')
+    .select('user_id')
+    .eq('id', id)
+    .single();
+
+  if (findError) return res.status(404).send('Atendente não encontrado');
+
+  // 2. Deletar atendente
+  const { error: deleteAtendenteError } = await supabase
+    .from('attendants')
+    .delete()
+    .eq('id', id);
+
+  if (deleteAtendenteError) return res.status(500).send(deleteAtendenteError.message);
+
+  // 3. Deletar o user vinculado
+  const { error: deleteUserError } = await supabase
+    .from('users')
+    .delete()
+    .eq('id', atendente.user_id);
+
+  if (deleteUserError) return res.status(500).send(deleteUserError.message);
+
+  res.status(200).send('Atendente e usuário deletados com sucesso');
+});
 module.exports = router;
