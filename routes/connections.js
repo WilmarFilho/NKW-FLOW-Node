@@ -1,4 +1,4 @@
-
+const axios = require("axios");
 const express = require('express');
 const router = express.Router();
 const { createClient } = require('@supabase/supabase-js');
@@ -9,11 +9,15 @@ const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_KEY
 
 // Salvar conexão
 router.post('/', async (req, res) => {
+
   const { user_id, nome, numero, status, agente_id } = req.body;
   const { data, error } = await supabase
     .from('connections')
     .insert([{ user_id, nome, numero, status, agente_id }])
     .select();
+
+  const n8nWebhookURL = `http://localhost:5678/webhook/create-session`;
+  const responseN8N = await axios.post(n8nWebhookURL, { nome });
 
   if (error) return res.status(500).send(error.message);
   res.status(201).json(data);
@@ -90,26 +94,5 @@ router.delete('/:id', async (req, res) => {
   res.status(200).send('Conexão deletada com sucesso');
 });
 
-
-
-// Endpoint chamado pelo frontend para criar nova sessão
-router.post('/create', async (req, res) => {
-    const { session } = req.body;
-
-    if (!session) {
-        return res.status(400).json({ error: 'Nome da sessão é obrigatório.' });
-    }
-
-    try {
-        // Altere a URL abaixo para a URL pública (ou interna se mesma rede) do seu N8N
-        const n8nWebhookURL = `http://localhost:5678/webhook/create-session`;
-
-        const response = await axios.post(n8nWebhookURL, { session });
-        return res.status(200).json(response.data);
-    } catch (error) {
-        console.error('Erro ao criar sessão no N8N:', error.message);
-        return res.status(500).json({ error: 'Erro ao criar sessão no N8N.' });
-    }
-});
 
 module.exports = router;
