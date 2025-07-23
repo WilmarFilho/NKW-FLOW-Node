@@ -10,7 +10,7 @@ router.post('/', async (req, res) => {
   const { foto_perfil, nome, tipo_de_agente, descricao, prompt_do_agente } = req.body;
   const { data, error } = await supabase
     .from('agents')
-    .insert([{ tipo_de_agente, descricao, prompt_do_agente }])
+    .insert([{ foto_perfil, nome, tipo_de_agente, descricao, prompt_do_agente }])
     .select();
   if (error) return res.status(500).json({ error: error.message });
   res.status(201).json(data);

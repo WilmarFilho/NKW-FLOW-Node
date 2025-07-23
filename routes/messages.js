@@ -31,6 +31,20 @@ router.get('/', async (req, res) => {
   res.json(data);
 });
 
+
+// Buscar mensagens por chat_id
+router.get('/chat/:chat_id', async (req, res) => {
+  const { chat_id } = req.params;
+  const { data, error } = await supabase
+    .from('messages')
+    .select('*')
+    .eq('chat_id', chat_id)
+    .order('criado_em', { ascending: true });
+
+  if (error) return res.status(500).send(error.message);
+  res.json(data);
+});
+
 // Buscar mensagem por ID
 router.get('/:id', async (req, res) => {
   const { id } = req.params;
