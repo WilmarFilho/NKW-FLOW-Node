@@ -8,6 +8,7 @@ const attendantsRoutes = require('./routes/attendants');
 const agentsRoutes = require('./routes/agents');
 const connectionsRoutes = require('./routes/connections');
 const chatsRoutes = require('./routes/chats');
+const messagesRoutes = require('./routes/messages')
 const helpRoutes = require("./routes/help");
 
 // Inicia Servidor Express
@@ -22,8 +23,8 @@ app.use('/users', usersRoutes);
 app.use('/attendants', attendantsRoutes);
 app.use('/agents', agentsRoutes);
 app.use('/connections', connectionsRoutes);
-
-app.use('/chats', chatsRoutes)
+app.use('/chats', chatsRoutes);
+app.use('/messages',messagesRoutes);
 app.use("/api/help", helpRoutes);
 
 //PORTA DO SERVER
