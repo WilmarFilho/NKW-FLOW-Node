@@ -31,6 +31,37 @@ router.get('/', async (req, res) => {
   res.json(data);
 });
 
+
+// Buscar chats por contato_numero e nome da conexão
+router.get('/buscar', async (req, res) => {
+  const { contato_numero, nome_conexao } = req.query;
+
+  const { data, error } = await supabase
+    .from('chats')
+    .select(`
+      *,
+      connection:connections(id, nome, numero)
+    `)
+    .eq('contato_numero', contato_numero)
+    .filter('connection.nome', 'eq', nome_conexao);
+
+  if (error) return res.status(500).send(error.message);
+  res.json(data);
+});
+
+// Buscar chats por connection_id
+router.get('/connection/:connection_id', async (req, res) => {
+  const { connection_id } = req.params;
+  const { data, error } = await supabase
+    .from('chats')
+    .select('*')
+    .eq('connection_id', connection_id)
+    .order('ultima_atualizacao', { ascending: false });
+
+  if (error) return res.status(500).send(error.message);
+  res.json(data);
+});
+
 // Buscar chat por ID
 router.get('/:id', async (req, res) => {
   const { id } = req.params;
