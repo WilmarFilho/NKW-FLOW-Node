@@ -32,21 +32,21 @@ router.get('/', async (req, res) => {
 });
 
 
-// Buscar chats por contato_numero e nome da conexão
+// Buscar chats por contato_numero e connection_id
 router.get('/buscar', async (req, res) => {
-  const { contato_numero, nome_conexao } = req.query;
+  const { contato_numero, connection_id } = req.body;
 
   const { data, error } = await supabase
     .from('chats')
     .select(`
-      *,
+      * ,
       connection:connections(id, nome, numero)
     `)
     .eq('contato_numero', contato_numero)
-    .filter('connection.nome', 'eq', nome_conexao);
+    .eq('connection_id', connection_id);
 
   if (error) return res.status(500).send(error.message);
-  res.json(data);
+  res.status(201).json({ data: data });
 });
 
 // Buscar chats por connection_id

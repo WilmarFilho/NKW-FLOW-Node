@@ -10,6 +10,7 @@ const connectionsRoutes = require('./routes/connections');
 const chatsRoutes = require('./routes/chats');
 const messagesRoutes = require('./routes/messages')
 const helpRoutes = require("./routes/help");
+const { router: eventsRoutes } = require('./routes/events');
 
 // Inicia Servidor Express
 const app = express();
@@ -25,6 +26,7 @@ app.use('/agents', agentsRoutes);
 app.use('/connections', connectionsRoutes);
 app.use('/chats', chatsRoutes);
 app.use('/messages',messagesRoutes);
+app.use('/events',eventsRoutes);
 app.use("/api/help", helpRoutes);
 
 //PORTA DO SERVER

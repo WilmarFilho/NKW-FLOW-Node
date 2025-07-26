@@ -8,19 +8,49 @@ const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_KEY
 
 // Salvar conexão
 router.post('/', async (req, res) => {
+  const { user_id, nome, agente_id } = req.body;
 
-  const { user_id, nome, numero, status, agente_id } = req.body;
-  const { data, error } = await supabase
-    .from('connections')
-    .insert([{ user_id, nome, numero, status, agente_id }])
-    .select();
+  try {
+    // 1. Criar instância no Evolution
+    const evolutionResponse = await axios.post('http://localhost:8081/instance/create', {
+      instanceName: nome,
+      qrcode: true,
+      integration: 'WHATSAPP-BAILEYS',
+      webhook: {
+        url: 'http://host.docker.internal:5678/webhook/evolution',
+        events: ['CONNECTION_UPDATE', 'MESSAGES_UPSERT', 'SEND_MESSAGE'],
+      },
+    }, {
+      headers: {
+        apikey: process.env.EVOLUTION_API_KEY
+      }
+    });
+    
+    const { instance, qrcode } = evolutionResponse.data;
 
-  const n8nWebhookURL = `http://localhost:5678/webhook/create-session`;
-  const responseN8N = await axios.post(n8nWebhookURL, { nome });
+    // 2. Salvar conexão no Supabase com o mesmo ID
+    const { data, error } = await supabase
+      .from('connections')
+      .insert([{
+        id: instance.instanceId,
+        user_id,
+        nome,
+        numero: null,
+        status: false,
+        agente_id
+      }])
+      .select();
 
-  if (error) return res.status(500).send(error.message);
-  res.status(201).json(responseN8N.data);
+    if (error) return res.status(500).send(error.message);
+
+    // 3. Retornar o QR Code ao front
+    res.status(201).json({ instance: instance.instanceId, qr_code: qrcode.base64 });
+  } catch (err) {
+    console.error('Erro ao criar instância:', err.message);
+    res.status(500).send('Erro ao criar instância no Evolution');
+  }
 });
+
 
 // Listar todas conexões com usuário e agente (join)
 router.get('/', async (req, res) => {
@@ -91,111 +121,5 @@ router.delete('/:id', async (req, res) => {
   if (error) return res.status(500).send(error.message);
   res.status(200).send('Conexão deletada com sucesso');
 });
-
-const newConnections = {};
-
-// Rota que o FRONT escuta com EventSource
-router.get('/webhook/events/:connection', (req, res) => {
-  const { connection } = req.params;
-
-  res.setHeader('Content-Type', 'text/event-stream');
-  res.setHeader('Cache-Control', 'no-cache');
-  res.setHeader('Connection', 'keep-alive');
-  res.flushHeaders();
-
-  if (!newConnections[connection]) newConnections[connection] = [];
-  newConnections[connection].push(res);
-
-  console.log(`📡 Cliente conectado: ${connection}`);
-
-  req.on('close', () => {
-    newConnections[connection] = newConnections[connection].filter(c => c !== res);
-    console.log(`❌ Cliente desconectado: ${connection}`);
-  });
-});
-
-// Rota que o N8N envia eventos ao BACK
-router.post('/dispatch', async (req, res) => {
-  const { connection, event, data } = req.body;
-
-  try {
-
-    //Atualiza o status e numero da conexão
-    if (event === 'connection.update') {
-
-      if (data.state === 'open' && data.wuid) {
-        await supabase
-          .from('connections')
-          .update({
-            numero: data.wuid.split('@')[0],
-            status: true
-          })
-          .eq('nome', connection);
-      }
-
-      if (data.state === 'close') {
-        await supabase
-          .from('connections')
-          .delete()
-          .eq('nome', connection);
-
-        console.log(`🗑 Conexão deletada por evento: ${connection}`);
-
-        // Envia o nome da conexão mesmo que o objeto completo tenha sido apagado
-        const enrichedEvent = {
-          event,
-          connection: { nome: connection },
-          state: 'close'
-        };
-
-        if (newConnections[connection]) {
-          for (const newConnection of newConnections[connection]) {
-            newConnection.write(`data: ${JSON.stringify(enrichedEvent)}\n\n`);
-          }
-        }
-
-        return res.status(200).send('ok, enviado');
-      }
-
-    }
-
-    // Buscar a conexão completa pelo nome da instância
-    const { data: fullConnection, error } = await supabase
-      .from('connections')
-      .select(`
-        *,
-        user:users(id, nome, email),
-        agente:agents(id, tipo_de_agente, prompt_do_agente)
-      `)
-      .eq('nome', connection)
-      .single();
-
-    if (error || !fullConnection) {
-      console.error('Conexão não encontrada para instancia:', connection);
-      return res.status(404).send('Conexão não encontrada');
-    }
-
-    const enrichedEvent = {
-      event,
-      connection: fullConnection, // objeto completo aqui
-      wuid: data?.wuid || null,
-      state: data?.state || null,
-    };
-
-    if (newConnections[connection]) {
-      for (const newConnection of newConnections[connection]) {
-        newConnection.write(`data: ${JSON.stringify(enrichedEvent)}\n\n`);
-      }
-
-      console.log(`📤 Evento enriquecido enviado: ${event} → ${connection}`);
-    }
-
-    res.status(200).send('ok, enviado');
-  } catch (err) {
-    console.error('Erro ao processar dispatch:', err.message);
-    res.status(500).send('Erro interno');
-  }
-});
-
 
 module.exports = router;
