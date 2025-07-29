@@ -25,7 +25,7 @@ router.post('/', async (req, res) => {
         apikey: process.env.EVOLUTION_API_KEY
       }
     });
-    
+
     const { instance, qrcode } = evolutionResponse.data;
 
     // 2. Salvar conexão no Supabase com o mesmo ID
@@ -115,10 +115,22 @@ router.put('/:id', async (req, res) => {
 });
 
 // Deletar conexão
-router.delete('/:id', async (req, res) => {
-  const { id } = req.params;
+router.delete('/:id/:instanceName', async (req, res) => {
+  const { id, instanceName } = req.params;
   const { error } = await supabase.from('connections').delete().eq('id', id);
   if (error) return res.status(500).send(error.message);
+
+  try {
+    await axios.delete(`http://localhost:8081/instance/delete/${instanceName}`, {
+      headers: {
+        apikey: process.env.EVOLUTION_API_KEY,
+      },
+    });
+  } catch (sendError) {
+    console.error('Erro ao deletar conexão:', sendError.response?.data || sendError.message);
+    return res.status(500).send('Erro ao deletar conexão');
+  }
+
   res.status(200).send('Conexão deletada com sucesso');
 });
 
