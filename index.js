@@ -10,6 +10,7 @@ const connectionsRoutes = require('./routes/connections');
 const chatsRoutes = require('./routes/chats');
 const messagesRoutes = require('./routes/messages')
 const helpRoutes = require("./routes/help");
+const uploadRoutes = require("./routes/upload");
 const { router: eventsRoutes } = require('./routes/events');
 
 // Inicia Servidor Express
@@ -28,6 +29,7 @@ app.use('/chats', chatsRoutes);
 app.use('/messages',messagesRoutes);
 app.use('/events',eventsRoutes);
 app.use("/api/help", helpRoutes);
+app.use('/upload', uploadRoutes);
 
 //PORTA DO SERVER
 const PORT = 5679;
