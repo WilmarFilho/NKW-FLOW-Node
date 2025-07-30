@@ -8,10 +8,21 @@ const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_KEY
 
 // Criar usuário
 router.post('/', async (req, res) => {
-  const { email, nome, senha_hash, tipo_de_usuario } = req.body;
+  const {
+    foto_perfil, email, nome, senha_hash, tipo_de_usuario, status,
+    modo_tela, modo_side_bar, mostra_nome_mensagens, modo_notificacao_atendente,
+    notificacao_para_entrar_conversa, notificacao_necessidade_de_entrar_conversa,
+    notificacao_novo_chat
+  } = req.body;
+
   const { data, error } = await supabase
     .from('users')
-    .insert([{ email, nome, senha_hash, tipo_de_usuario }])
+    .insert([{
+      foto_perfil, email, nome, senha_hash, tipo_de_usuario, status,
+      modo_tela, modo_side_bar, mostra_nome_mensagens, modo_notificacao_atendente,
+      notificacao_para_entrar_conversa, notificacao_necessidade_de_entrar_conversa,
+      notificacao_novo_chat
+    }])
     .select();
 
   if (error) return res.status(500).send(error.message);
@@ -41,11 +52,21 @@ router.get('/:id', async (req, res) => {
 // Atualizar usuário
 router.put('/:id', async (req, res) => {
   const { id } = req.params;
-  const { email, nome, senha_hash, tipo_de_usuario, status } = req.body;
+  const {
+    foto_perfil, email, nome, senha_hash, tipo_de_usuario, status,
+    modo_tela, modo_side_bar, mostra_nome_mensagens, modo_notificacao_atendente,
+    notificacao_para_entrar_conversa, notificacao_necessidade_de_entrar_conversa,
+    notificacao_novo_chat
+  } = req.body;
 
   const { data, error } = await supabase
     .from('users')
-    .update({ email, nome, senha_hash, tipo_de_usuario, status })
+    .update({
+      foto_perfil, email, nome, senha_hash, tipo_de_usuario, status,
+      modo_tela, modo_side_bar, mostra_nome_mensagens, modo_notificacao_atendente,
+      notificacao_para_entrar_conversa, notificacao_necessidade_de_entrar_conversa,
+      notificacao_novo_chat
+    })
     .eq('id', id)
     .select();
 
