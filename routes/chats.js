@@ -93,6 +93,21 @@ router.get('/:id', async (req, res) => {
   res.json(data);
 });
 
+// Buscar chats por agente_id via conexão
+router.get('/agente/:agente_id', async (req, res) => {
+  const { agente_id } = req.params;
+  const { data, error } = await supabase
+    .from('chats')
+    .select(`
+      *,
+      connection:connections!chats_connection_id_fkey(id, nome, agente_id)
+    `)
+    .filter('connection.agente_id', 'eq', agente_id);
+
+  if (error) return res.status(500).send(error.message);
+  res.json(data);
+});
+
 // Atualizar chat
 router.put('/:id', async (req, res) => {
   const { id } = req.params;
