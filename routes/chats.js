@@ -49,6 +49,21 @@ router.get('/buscar', async (req, res) => {
   res.status(201).json({ data: data });
 });
 
+
+// Buscar chats por connection_id e contato_numero
+router.get('/search/:connection_id/:contato_numero', async (req, res) => {
+  const { connection_id, contato_numero } = req.params;
+  const { data, error } = await supabase
+    .from('chats')
+    .select('*')
+    .eq('connection_id', connection_id)
+    .eq('contato_numero', contato_numero)
+    .order('ultima_atualizacao', { ascending: false });
+
+  if (error) return res.status(500).send(error.message);
+  res.json(data);
+});
+
 // Buscar chats por connection_id
 router.get('/connection/:connection_id', async (req, res) => {
   const { connection_id } = req.params;
