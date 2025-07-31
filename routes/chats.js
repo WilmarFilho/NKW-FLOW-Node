@@ -24,7 +24,7 @@ router.get('/', async (req, res) => {
     .from('chats')
     .select(`
       *,
-      connection:connections(id, nome, numero)
+      connection:connections(*)
     `);
 
   if (error) return res.status(500).send(error.message);
@@ -40,7 +40,7 @@ router.get('/buscar', async (req, res) => {
     .from('chats')
     .select(`
       * ,
-      connection:connections(id, nome, numero)
+      connection:connections(*)
     `)
     .eq('contato_numero', contato_numero)
     .eq('connection_id', connection_id);
@@ -121,7 +121,7 @@ router.get('/:id', async (req, res) => {
     .from('chats')
     .select(`
       *,
-      connection:connections(id, nome, numero)
+      connection:connections(*)
     `)
     .eq('id', id)
     .single();
