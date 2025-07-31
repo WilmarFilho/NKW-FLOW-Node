@@ -67,27 +67,42 @@ router.get('/search/:connection_id/:contato_numero', async (req, res) => {
 // Buscar chats por user_id
 router.get('/connections/chats/:user_id', async (req, res) => {
   const { user_id } = req.params;
+  const { agente_id } = req.query;
 
   try {
-    // 1. Busca todas as conexões do usuário
-    const { data: conexoes, error: conexoesError } = await supabase
+    // 1. Busca conexões do usuário (com ou sem filtro por agente)
+    let query = supabase
       .from('connections')
       .select('id')
       .eq('user_id', user_id);
 
+    if (agente_id) {
+      query = query.eq('agente_id', agente_id);
+    }
+
+    const { data: conexoes, error: conexoesError } = await query;
+
     if (conexoesError) return res.status(500).send(conexoesError.message);
     if (!conexoes || conexoes.length === 0) return res.json([]);
 
-    // 2. Para cada conexão, chama a função de chats com última mensagem
+    // 2. Executa chamada da função RPC para cada conexão
     const chamadas = conexoes.map(c =>
       supabase.rpc('chats_com_ultima_mensagem', { connection_id: c.id })
     );
 
     const resultados = await Promise.all(chamadas);
 
-    // 3. Junta todos os resultados
-    const todosOsChats = resultados.flatMap(r => r.data ?? []);
+    // 3. Remove duplicatas por ID de chat
+    const todosOsChats = resultados
+      .flatMap(r => r.data ?? [])
+      .reduce((acc, chat) => {
+        if (!acc.some(c => c.id === chat.id)) {
+          acc.push(chat);
+        }
+        return acc;
+      }, []);
 
+      
     res.json(todosOsChats);
 
   } catch (err) {
@@ -95,6 +110,7 @@ router.get('/connections/chats/:user_id', async (req, res) => {
     res.status(500).send('Erro interno');
   }
 });
+
 
 
 
