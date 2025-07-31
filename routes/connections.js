@@ -15,6 +15,7 @@ router.post('/', async (req, res) => {
     const evolutionResponse = await axios.post('http://localhost:8081/instance/create', {
       instanceName: nome,
       qrcode: true,
+      groupsIgnore: true,
       integration: 'WHATSAPP-BAILEYS',
       webhook: {
         url: 'http://host.docker.internal:5678/webhook/evolution',

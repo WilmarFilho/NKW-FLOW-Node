@@ -34,7 +34,7 @@ router.post('/', async (req, res) => {
   const instanceName = conexaoData.nome;
   const chatNumber = chatData.contato_numero;
 
-  console.log(instanceName, '--', chatNumber, '---', mensagem)
+  console.log('Bateu no endpoint post de message: ', instanceName, '--', chatNumber, '---', mensagem)
 
   // 4. Enviar para EvolutionAPI
   try {
@@ -51,38 +51,7 @@ router.post('/', async (req, res) => {
     return res.status(500).send('Erro ao enviar mensagem para EvolutionAPI');
   }
 
-  // 5. Buscar user_id da conexão
-  const { data: conexaoCompleta, error: connUserError } = await supabase
-    .from('connections')
-    .select('id, user_id')
-    .eq('id', chatData.connection_id)
-    .single();
-
-  if (connUserError) {
-    console.error('Erro ao buscar user_id da conexão:', connUserError.message);
-    return res.status(500).send('Erro ao identificar usuário da conexão');
-  }
-
-  const userId = conexaoCompleta.user_id;
-
-  console.log(eventClientsByUser)
-
-  // 6. Disparar evento SSE para o usuário
-  if (eventClientsByUser[userId]) {
-    console.log('op')
-    const enrichedEvent = {
-      event: 'send.message',
-      message: mensagem,
-    };
-
-    for (const client of eventClientsByUser[userId]) {
-      client.write(`data: ${JSON.stringify(enrichedEvent)}\n\n`);
-    }
-
-    console.log(`📡 Mensagem enviada via SSE para user_id=${userId}`);
-
-    res.status(201).json(mensagem);
-  }
+  res.status(201).json(mensagem);
 });
 
 

@@ -64,18 +64,39 @@ router.get('/search/:connection_id/:contato_numero', async (req, res) => {
   res.json(data);
 });
 
-// Buscar chats por connection_id
-router.get('/connection/:connection_id', async (req, res) => {
-  const { connection_id } = req.params;
-  const { data, error } = await supabase
-    .from('chats')
-    .select('*')
-    .eq('connection_id', connection_id)
-    .order('ultima_atualizacao', { ascending: false });
+// Buscar chats por user_id
+router.get('/connections/chats/:user_id', async (req, res) => {
+  const { user_id } = req.params;
 
-  if (error) return res.status(500).send(error.message);
-  res.json(data);
+  try {
+    // 1. Busca todas as conexões do usuário
+    const { data: conexoes, error: conexoesError } = await supabase
+      .from('connections')
+      .select('id')
+      .eq('user_id', user_id);
+
+    if (conexoesError) return res.status(500).send(conexoesError.message);
+    if (!conexoes || conexoes.length === 0) return res.json([]);
+
+    // 2. Para cada conexão, chama a função de chats com última mensagem
+    const chamadas = conexoes.map(c =>
+      supabase.rpc('chats_com_ultima_mensagem', { connection_id: c.id })
+    );
+
+    const resultados = await Promise.all(chamadas);
+
+    // 3. Junta todos os resultados
+    const todosOsChats = resultados.flatMap(r => r.data ?? []);
+
+    res.json(todosOsChats);
+
+  } catch (err) {
+    console.error('Erro ao listar chats do usuário:', err.message);
+    res.status(500).send('Erro interno');
+  }
 });
+
+
 
 // Buscar chat por ID
 router.get('/:id', async (req, res) => {
