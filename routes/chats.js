@@ -102,7 +102,7 @@ router.get('/connections/chats/:user_id', async (req, res) => {
         return acc;
       }, []);
 
-      
+
     res.json(todosOsChats);
 
   } catch (err) {
@@ -154,10 +154,21 @@ router.put('/:id', async (req, res) => {
     .from('chats')
     .update({ connection_id, contato_nome, contato_numero, ia_ativa })
     .eq('id', id)
-    .select();
+    .select('*, connections(*)');
 
   if (error) return res.status(500).send(error.message);
-  res.json(data);
+
+  console.log(data)
+  // Renomear 'connections' para 'connection' se vier como array
+  const updatedChat = data[0];
+  const connection = updatedChat.connections ? updatedChat.connections : null;
+
+  // Remove o campo 'connections' e adiciona 'connection'
+  delete updatedChat.connections;
+  updatedChat.connection = connection;
+
+  res.json(updatedChat);
+
 });
 
 // Deletar chat
