@@ -72,7 +72,7 @@ router.post('/dispatch', async (req, res) => {
                     numero: data.wuid.split('@')[0],
                     status: true
                 })
-                .eq('nome', connection); // Busca pelo nome da connection já que o evento de connectio.update não tem o id da connection
+                .eq('id', connection); 
         }
 
         // Busca dados da conexão (com user_id)
@@ -83,7 +83,7 @@ router.post('/dispatch', async (req, res) => {
         user:users(id, nome, email),
         agente:agents(id, tipo_de_agente, prompt_do_agente)
       `)
-            .eq('nome', connection) // Busca pelo nome da connection já que o evento de connectio.update não tem o id da connection
+            .eq('id', connection) 
             .single();
 
         if (error || !fullConnection) {
@@ -235,7 +235,7 @@ router.post('/dispatch', async (req, res) => {
 
         // Se for desconexão, apaga a conexão
         if (event === 'connection.update' && data.state === 'close') {
-            await supabase.from('connections').delete().eq('nome', connection);
+            await supabase.from('connections').delete().eq('id', connection);
         }
 
         res.status(200).send('ok, enviado');

@@ -10,10 +10,26 @@ const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_KEY
 router.post('/', async (req, res) => {
   const { user_id, nome, agente_id } = req.body;
 
+  // 1. Salvar conexão no Supabase 
+  const { data, error } = await supabase
+    .from('connections')
+    .insert([{
+      user_id,
+      nome,
+      numero: null,
+      status: false,
+      agente_id
+    }])
+    .select();
+
+  if (error) return res.status(500).send(error.message);
+
+  const instanceId = data[0].id;
+
   try {
-    // 1. Criar instância no Evolution
+    // 1. Criar instância no Evolution com o instanceName sendo o Id dela no supabase
     const evolutionResponse = await axios.post('http://localhost:8081/instance/create', {
-      instanceName: nome,
+      instanceName: instanceId,
       qrcode: true,
       groupsIgnore: true,
       integration: 'WHATSAPP-BAILEYS',
@@ -29,20 +45,7 @@ router.post('/', async (req, res) => {
 
     const { instance, qrcode } = evolutionResponse.data;
 
-    // 2. Salvar conexão no Supabase com o mesmo ID
-    const { data, error } = await supabase
-      .from('connections')
-      .insert([{
-        id: instance.instanceId,
-        user_id,
-        nome,
-        numero: null,
-        status: false,
-        agente_id
-      }])
-      .select();
 
-    if (error) return res.status(500).send(error.message);
 
     // 3. Retornar o QR Code ao front
     res.status(201).json({ instance: instance.instanceId, qr_code: qrcode.base64 });
@@ -116,13 +119,14 @@ router.put('/:id', async (req, res) => {
 });
 
 // Deletar conexão
-router.delete('/:id/:instanceName', async (req, res) => {
-  const { id, instanceName } = req.params;
+router.delete('/:id', async (req, res) => {
+  const { id } = req.params;
   const { error } = await supabase.from('connections').delete().eq('id', id);
   if (error) return res.status(500).send(error.message);
 
   try {
-    await axios.delete(`http://localhost:8081/instance/delete/${instanceName}`, {
+    console.log(id)
+    await axios.delete(`http://localhost:8081/instance/delete/${id}`, {
       headers: {
         apikey: process.env.EVOLUTION_API_KEY,
       },
