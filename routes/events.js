@@ -223,7 +223,7 @@ router.post('/dispatch', async (req, res) => {
             enrichedEvent.message = msgCriada;
 
         }
-
+        console.log(eventClientsByUser)
         // Envia evento via SSE
         if (eventClientsByUser[userId]) {
             for (const client of eventClientsByUser[userId]) {

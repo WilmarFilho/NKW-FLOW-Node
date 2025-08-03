@@ -31,14 +31,14 @@ router.post('/', async (req, res) => {
 
   if (conexaoError) return res.status(500).send(conexaoError.message);
 
-  const instanceName = conexaoData.nome;
+  const instanceName = conexaoData.id;
   const chatNumber = chatData.contato_numero;
 
   console.log('Bateu no endpoint post de message: ', instanceName, '--', chatNumber, '---', mensagem)
 
   // 4. Enviar para EvolutionAPI
   try {
-    await axios.post(`http://localhost:8081/message/sendText/${instanceName}`, {
+    await axios.post(`http://localhost:8081/message/sendText/${chatData.connection_id}`, {
       number: chatNumber,
       text: mensagem,
     }, {
