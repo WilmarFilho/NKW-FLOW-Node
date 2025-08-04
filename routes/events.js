@@ -27,7 +27,6 @@ async function buscarDadosContato(numero, instance) {
     }
 }
 
-
 // 📡 Conexão SSE global para cada usuário
 router.get('/:user_id', (req, res) => {
     const { user_id } = req.params;
@@ -51,6 +50,17 @@ router.get('/:user_id', (req, res) => {
 router.post('/dispatch', async (req, res) => {
     const { connection, event, data } = req.body;
 
+    // Tipos de mensagem para serem ignoradas por enquanto:
+
+    // Reação, Video, Contato, Documento || Enquete, Pix, Evento, Localização, 
+
+    // Obs: Audio gravado e ecaminhado está sendo tratado igualmente
+
+    if (data.message?.reactionMessage || data.message?.videoMessage || data.message?.locationMessage || data.message?.contactMessage || data.message?.documentMessage || data.message?.pollCreationMessageV3 || data.message?.interactiveMessage || data.message?.eventMessage ) {
+        console.log('👍 Ignorado');
+        return res.status(200).send('Ignorada');
+    }
+
     // Se connection.update = connectiong significa que o front solicitou a criação da instancia e a mesma está aguardando ser efetivada
     // Se connection.update = open significa que o front escaneou o qr code e a conexão foi efetivada
 
@@ -72,7 +82,7 @@ router.post('/dispatch', async (req, res) => {
                     numero: data.wuid.split('@')[0],
                     status: true
                 })
-                .eq('id', connection); 
+                .eq('id', connection);
         }
 
         // Busca dados da conexão (com user_id)
@@ -83,7 +93,7 @@ router.post('/dispatch', async (req, res) => {
         user:users(id, nome, email),
         agente:agents(id, tipo_de_agente, prompt_do_agente)
       `)
-            .eq('id', connection) 
+            .eq('id', connection)
             .single();
 
         if (error || !fullConnection) {
@@ -160,14 +170,89 @@ router.post('/dispatch', async (req, res) => {
                 chatId = novoChat.id;
             }
 
-            const remetente = data.key.fromMe ? 'cliente' : 'humano'; // Verifica quem se foi o usuário que disparou a mensagem no whatsApp Web
+            const remetente = data.key.fromMe ? 'cliente' : 'humano'; // Verifica quem foi o usuário que disparou a mensagem no whatsApp Web
 
             // 4. Cria a mensagem
-            const novaMensagem = {
+            let novaMensagem = {
                 chat_id: chatId,
                 remetente: remetente,
                 mensagem: data.message.conversation
             };
+
+            // Verifica se é uma imagem
+            if (data.message?.imageMessage) {
+                try {
+                    const base64Response = await axios.post(
+                        `http://localhost:8081/chat/getBase64FromMediaMessage/${connectionId}`,
+                        { message: data },
+                        { headers: { apikey: process.env.EVOLUTION_API_KEY } }
+                    );
+
+
+                    const base64 = base64Response?.data?.base64;
+                    const caption = data.message.imageMessage.caption || null;
+
+                    novaMensagem = {
+                        chat_id: chatId,
+                        remetente: remetente,
+                        mensagem: caption,
+                        mimetype: 'image',
+                        base64: base64
+                    };
+                } catch (err) {
+                    console.error('Erro ao buscar base64 da imagem:', err.message);
+                }
+            }
+
+            // Verifica se é um audio
+            if (data.message?.audioMessage) {
+                try {
+                    const mime = data.message.audioMessage.mimetype || 'audio/ogg';
+
+                    const base64Raw = (await axios.post(
+                        `http://localhost:8081/chat/getBase64FromMediaMessage/${connectionId}`,
+                        { message: data },
+                        { headers: { apikey: process.env.EVOLUTION_API_KEY } }
+                    ));
+
+                    const base64 = base64Raw?.data?.base64;
+
+                    novaMensagem = {
+                        chat_id: chatId,
+                        remetente,
+                        mensagem: null,
+                        mimetype: 'audio',
+                        base64: base64
+                    };
+                } catch (err) {
+                    console.error('Erro ao buscar base64 do áudio:', err.message);
+                }
+            }
+
+            // Verifica se é um sticker
+            if (data.message?.stickerMessage) {
+                try {
+                    const mime = data.message.stickerMessage.mimetype || 'image/webp';
+
+                    const base64Raw = (await axios.post(
+                        `http://localhost:8081/chat/getBase64FromMediaMessage/${connectionId}`,
+                        { message: data },
+                        { headers: { apikey: process.env.EVOLUTION_API_KEY } }
+                    ));
+
+                    const base64 = base64Raw?.data?.base64;
+
+                    novaMensagem = {
+                        chat_id: chatId,
+                        remetente,
+                        mensagem: null,
+                        mimetype: 'sticker',
+                        base64: base64
+                    };
+                } catch (err) {
+                    console.error('Erro ao buscar base64 do sticker:', err.message);
+                }
+            }
 
             const { data: msgCriada, error: msgError } = await supabase
                 .from('messages')
@@ -223,7 +308,7 @@ router.post('/dispatch', async (req, res) => {
             enrichedEvent.message = msgCriada;
 
         }
-        console.log(eventClientsByUser)
+
         // Envia evento via SSE
         if (eventClientsByUser[userId]) {
             for (const client of eventClientsByUser[userId]) {
