@@ -50,13 +50,15 @@ router.get('/:user_id', (req, res) => {
 router.post('/dispatch', async (req, res) => {
     const { connection, event, data } = req.body;
 
+    console.log('AQUII:', data)
+
     // Tipos de mensagem para serem ignoradas por enquanto:
 
-    // Reação, Video, Contato, Documento || Enquete, Pix, Evento, Localização, 
+    // Reação, Video, Contato || Enquete, Pix, Evento, Localização, 
 
     // Obs: Audio gravado e ecaminhado está sendo tratado igualmente
 
-    if (data.message?.reactionMessage || data.message?.videoMessage || data.message?.locationMessage || data.message?.contactMessage || data.message?.documentMessage || data.message?.pollCreationMessageV3 || data.message?.interactiveMessage || data.message?.eventMessage ) {
+    if (data.message?.reactionMessage || data.message?.videoMessage || data.message?.locationMessage || data.message?.contactMessage || data.message?.pollCreationMessageV3 || data.message?.interactiveMessage || data.message?.eventMessage) {
         console.log('👍 Ignorado');
         return res.status(200).send('Ignorada');
     }
@@ -69,7 +71,7 @@ router.post('/dispatch', async (req, res) => {
     // Usuário mandou mensagem pelo WhatsApp Web ou Celular Conectado
 
     // send.message
-    // Usuário mandou mensagem pela plataformaF
+    // Usuário mandou mensagem pela plataforma
 
     console.log(req.body)
 
@@ -254,6 +256,36 @@ router.post('/dispatch', async (req, res) => {
                 }
             }
 
+            // Verifica se é um documento
+            if (data.message?.documentMessage) {
+                try {
+                    const mime = data.message.documentMessage.mimetype || 'application/octet-stream';
+                    const caption = data.message.documentMessage.caption || null;
+                    const fileName = data.message.documentMessage.fileName || 'arquivo'; // Pega o nome do arquivo
+
+                    const base64Raw = (await axios.post(
+                        `http://localhost:8081/chat/getBase64FromMediaMessage/${connectionId}`,
+                        { message: data },
+                        { headers: { apikey: process.env.EVOLUTION_API_KEY } }
+                    ));
+
+                    const base64 = base64Raw?.data?.base64;
+
+                    novaMensagem = {
+                        chat_id: chatId,
+                        remetente,
+                        // Se houver legenda (caption), usa ela. Senão, usa o nome do arquivo como mensagem.
+                        mensagem: caption || fileName,
+                        mimetype: mime,
+                        base64: base64,
+                        // Se você adicionou a coluna no DB (recomendado):
+                        // nome_arquivo: fileName 
+                    };
+                } catch (err) {
+                    console.error('Erro ao buscar base64 do documento:', err.message);
+                }
+            }
+
             const { data: msgCriada, error: msgError } = await supabase
                 .from('messages')
                 .insert(novaMensagem)
@@ -288,11 +320,116 @@ router.post('/dispatch', async (req, res) => {
             const chatId = chatExistente.id;
 
             // 4. Cria a mensagem
-            const novaMensagem = {
+            let novaMensagem = {
                 chat_id: chatId,
                 remetente: 'cliente',
                 mensagem: data.message.conversation
             };
+
+            // Verifica se é uma imagem
+            if (data.message?.imageMessage) {
+                try {
+                    const base64Response = await axios.post(
+                        `http://localhost:8081/chat/getBase64FromMediaMessage/${connectionId}`,
+                        { message: data },
+                        { headers: { apikey: process.env.EVOLUTION_API_KEY } }
+                    );
+
+
+                    const base64 = base64Response?.data?.base64;
+                    const caption = data.message.imageMessage.caption || null;
+
+                    novaMensagem = {
+                        chat_id: chatId,
+                        remetente: 'cliente',
+                        mensagem: caption,
+                        mimetype: 'image',
+                        base64: base64
+                    };
+                } catch (err) {
+                    console.error('Erro ao buscar base64 da imagem:', err.message);
+                }
+            }
+
+            // Verifica se é um audio
+            if (data.message?.audioMessage) {
+                try {
+                    const mime = data.message.audioMessage.mimetype || 'audio/ogg';
+
+                    const base64Raw = (await axios.post(
+                        `http://localhost:8081/chat/getBase64FromMediaMessage/${connectionId}`,
+                        { message: data },
+                        { headers: { apikey: process.env.EVOLUTION_API_KEY } }
+                    ));
+
+                    const base64 = base64Raw?.data?.base64;
+
+                    novaMensagem = {
+                        chat_id: chatId,
+                        remetente: 'cliente',
+                        mensagem: null,
+                        mimetype: 'audio',
+                        base64: base64
+                    };
+                } catch (err) {
+                    console.error('Erro ao buscar base64 do áudio:', err.message);
+                }
+            }
+
+            // Verifica se é um sticker
+            if (data.message?.stickerMessage) {
+                try {
+                    const mime = data.message.stickerMessage.mimetype || 'image/webp';
+
+                    const base64Raw = (await axios.post(
+                        `http://localhost:8081/chat/getBase64FromMediaMessage/${connectionId}`,
+                        { message: data },
+                        { headers: { apikey: process.env.EVOLUTION_API_KEY } }
+                    ));
+
+                    const base64 = base64Raw?.data?.base64;
+
+                    novaMensagem = {
+                        chat_id: chatId,
+                        remetente: 'cliente',
+                        mensagem: null,
+                        mimetype: 'sticker',
+                        base64: base64
+                    };
+                } catch (err) {
+                    console.error('Erro ao buscar base64 do sticker:', err.message);
+                }
+            }
+
+            // Verifica se é um documento
+            if (data.message?.documentMessage) {
+                try {
+                    const mime = data.message.documentMessage.mimetype || 'application/octet-stream';
+                    const caption = data.message.documentMessage.caption || null;
+                    const fileName = data.message.documentMessage.fileName || 'arquivo'; // Pega o nome do arquivo
+
+                    const base64Raw = (await axios.post(
+                        `http://localhost:8081/chat/getBase64FromMediaMessage/${connectionId}`,
+                        { message: data },
+                        { headers: { apikey: process.env.EVOLUTION_API_KEY } }
+                    ));
+
+                    const base64 = base64Raw?.data?.base64;
+
+                    novaMensagem = {
+                        chat_id: chatId,
+                        remetente: 'cliente',
+                        // Se houver legenda (caption), usa ela. Senão, usa o nome do arquivo como mensagem.
+                        mensagem: caption || fileName,
+                        mimetype: mime,
+                        base64: base64,
+                        // Se você adicionou a coluna no DB (recomendado):
+                        // nome_arquivo: fileName 
+                    };
+                } catch (err) {
+                    console.error('Erro ao buscar base64 do documento:', err.message);
+                }
+            }
 
             const { data: msgCriada, error: msgError } = await supabase
                 .from('messages')
@@ -305,6 +442,7 @@ router.post('/dispatch', async (req, res) => {
                 return res.status(500).send('Erro ao salvar mensagem');
             }
 
+            console.log(msgCriada)
             enrichedEvent.message = msgCriada;
 
         }
