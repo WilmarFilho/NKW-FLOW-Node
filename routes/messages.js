@@ -11,7 +11,9 @@ const { eventClientsByUser } = require('./events.js');
 
 // Criar mensagem e enviar para Evolution
 router.post('/', async (req, res) => {
-  const { chat_id, remetente, mensagem, mimetype, base64, transcricao } = req.body;
+  const { user_id, chat_id, remetente, mensagem, mimetype, base64, transcricao } = req.body;
+
+  let remetenteNome = '';
 
   // 2. Buscar dados do chat (contato e conexão)
   const { data: chatData, error: chatError } = await supabase
@@ -25,7 +27,7 @@ router.post('/', async (req, res) => {
   // 3. Buscar instance_name da conexão
   const { data: conexaoData, error: conexaoError } = await supabase
     .from('connections')
-    .select('nome')
+    .select('id')
     .eq('id', chatData.connection_id)
     .single();
 
@@ -36,11 +38,27 @@ router.post('/', async (req, res) => {
 
   console.log('Bateu no endpoint post de message: ', instanceName, '--', chatNumber, '---', mensagem)
 
+  const { data: userData, error: userError } = await supabase
+    .from('users')
+    .select('nome, mostra_nome_mensagens')
+    .eq('id', user_id)
+    .single();
+
+  if (userError) return res.status(500).send(userError.message);
+
+  if (userData.mostra_nome_mensagens) {
+    remetenteNome = `*${userData.nome}* \n\n`;
+  }
+
+  const textoFormatado = `${remetenteNome}${mensagem}`;
+
+  console.log(chatData.connection_id, '------', textoFormatado)
+
   // 4. Enviar para EvolutionAPI
   try {
     await axios.post(`http://localhost:8081/message/sendText/${chatData.connection_id}`, {
       number: chatNumber,
-      text: mensagem,
+      text: textoFormatado,
     }, {
       headers: {
         apikey: process.env.EVOLUTION_API_KEY,
