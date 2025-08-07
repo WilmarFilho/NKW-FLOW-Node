@@ -54,11 +54,11 @@ router.post('/dispatch', async (req, res) => {
 
     // Tipos de mensagem para serem ignoradas por enquanto:
 
-    // Reação, Video, Contato || Enquete, Pix, Evento, Localização, 
+    // Edição de mensagem, Reação, Video, Contato || Enquete, Pix, Evento, Localização, 
 
     // Obs: Audio gravado e ecaminhado está sendo tratado igualmente
 
-    if (data.message?.reactionMessage || data.message?.videoMessage || data.message?.locationMessage || data.message?.contactMessage || data.message?.pollCreationMessageV3 || data.message?.interactiveMessage || data.message?.eventMessage) {
+    if (data.message?.editedMessage || data.message?.reactionMessage || data.message?.videoMessage || data.message?.locationMessage || data.message?.contactMessage || data.message?.pollCreationMessageV3 || data.message?.interactiveMessage || data.message?.eventMessage) {
         console.log('👍 Ignorado');
         return res.status(200).send('Ignorada');
     }
