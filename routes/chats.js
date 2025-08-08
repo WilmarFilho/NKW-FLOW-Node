@@ -1,5 +1,6 @@
 
 const express = require('express');
+const axios = require("axios");
 const router = express.Router();
 const { createClient } = require('@supabase/supabase-js');
 require('dotenv').config();
@@ -170,6 +171,55 @@ router.put('/:id', async (req, res) => {
   res.json(updatedChat);
 
 });
+
+router.put('/fetchImage/:chatId', async (req, res) => {
+  const { chatId } = req.params;
+
+  if (!chatId) {
+    return res.status(400).json({ error: 'chatId é obrigatório' });
+  }
+
+  try {
+    // 1. Busca o chat com info da conexão
+    const { data: chat, error } = await supabase
+      .from('chats')
+      .select('id, contato_numero, connection_id')
+      .eq('id', chatId)
+      .maybeSingle();
+
+    if (error || !chat) {
+      return res.status(404).json({ error: 'Chat não encontrado' });
+    }
+
+    // 2. Busca a nova imagem de perfil via EvolutionAPI
+    const fotoURL = await axios.post(
+      `http://localhost:8081/chat/fetchProfilePictureUrl/${chat.connection_id}`,
+      { number: chat.contato_numero },
+      { headers: { apikey: process.env.EVOLUTION_API_KEY } }
+    );
+
+    const { profilePictureUrl } = fotoURL.data;
+
+    // 3. Atualiza no banco e retorna o chat atualizado
+    const { data: updatedChat, error: updateError } = await supabase
+      .from('chats')
+      .update({ foto_perfil: profilePictureUrl || null })
+      .eq('id', chatId)
+      .select()
+      .single();
+
+    if (updateError) {
+      throw updateError;
+    }
+
+    return res.status(200).json(updatedChat);
+  } catch (err) {
+    console.error('Erro ao atualizar foto de perfil:', err.message);
+    return res.status(500).json({ error: 'Erro ao buscar nova imagem' });
+  }
+});
+
+
 
 // Deletar chat
 router.delete('/:id', async (req, res) => {
