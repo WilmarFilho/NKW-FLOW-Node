@@ -8,10 +8,10 @@ const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_KEY
 
 // Criar agente
 router.post('/', async (req, res) => {
-  const { foto_perfil, nome, tipo_de_agente, descricao, prompt_do_agente } = req.body;
+  const {  tipo_de_agente, descricao, prompt_do_agente } = req.body;
   const { data, error } = await supabase
     .from('agents')
-    .insert([{ foto_perfil, nome, tipo_de_agente, descricao, prompt_do_agente }])
+    .insert([{  tipo_de_agente, descricao, prompt_do_agente }])
     .select();
   if (error) return res.status(500).json({ error: error.message });
   res.status(201).json(data);
@@ -42,7 +42,7 @@ router.get('/:id', async (req, res) => {
 // Atualizar agente
 router.put('/:id', async (req, res) => {
   const { id } = req.params;
-  const { foto_perfil, nome, tipo_de_agente, descricao, prompt_do_agente } = req.body;
+  const {  tipo_de_agente, descricao, prompt_do_agente } = req.body;
   const { data, error } = await supabase
     .from('agents')
     .update({ tipo_de_agente, prompt_do_agente })
