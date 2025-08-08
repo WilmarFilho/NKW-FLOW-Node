@@ -25,7 +25,7 @@ router.get('/', async (req, res) => {
     .select(`
       *,
       user_admin:users!attendants_user_admin_id_fkey(id, nome, email),
-      user:users!attendants_user_id_fkey(id, nome, email)
+      user:users!attendants_user_id_fkey(id, nome, email, status, numero)
     `);
 
   if (error) return res.status(500).send(error.message);

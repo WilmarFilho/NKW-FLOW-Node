@@ -149,11 +149,11 @@ router.get('/agente/:agente_id', async (req, res) => {
 // Atualizar chat
 router.put('/:id', async (req, res) => {
   const { id } = req.params;
-  const { connection_id, contato_nome, contato_numero, ia_ativa } = req.body;
+  const { connection_id, contato_nome, contato_numero, ia_ativa, status } = req.body;
 
   const { data, error } = await supabase
     .from('chats')
-    .update({ connection_id, contato_nome, contato_numero, ia_ativa })
+    .update({ connection_id, contato_nome, contato_numero, ia_ativa, status })
     .eq('id', id)
     .select('*, connections(*)');
 

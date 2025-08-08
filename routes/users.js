@@ -9,7 +9,7 @@ const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_KEY
 // Criar usuário
 router.post('/', async (req, res) => {
   const {
-    foto_perfil, email, nome, senha_hash, tipo_de_usuario, status,
+    foto_perfil, email, nome, numero, senha_hash, tipo_de_usuario, status,
     modo_tela, modo_side_bar, mostra_nome_mensagens, modo_notificacao_atendente,
     notificacao_para_entrar_conversa, notificacao_necessidade_de_entrar_conversa,
     notificacao_novo_chat
@@ -18,7 +18,7 @@ router.post('/', async (req, res) => {
   const { data, error } = await supabase
     .from('users')
     .insert([{
-      foto_perfil, email, nome, senha_hash, tipo_de_usuario, status,
+      foto_perfil, email, nome, senha_hash, tipo_de_usuario, status, numero,
       modo_tela, modo_side_bar, mostra_nome_mensagens, modo_notificacao_atendente,
       notificacao_para_entrar_conversa, notificacao_necessidade_de_entrar_conversa,
       notificacao_novo_chat
