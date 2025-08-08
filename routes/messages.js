@@ -12,100 +12,119 @@ const { eventClientsByUser } = require('./events.js');
 // Rota para criar mensagem e enviar para a Evolution API
 router.post('/', async (req, res) => {
   // O campo 'mensagem' agora pode ser o texto, a legenda de uma imagem, ou o nome de um arquivo
-  const { user_id, chat_id, mensagem, mimetype, base64 } = req.body;
+  const { user_id, chat_id, mensagem, mimetype, base64, connection_id, number } = req.body;
+  if (chat_id) {
+    try {
+      // 1. BUSCAR DADOS ESSENCIAIS (Chat, Conexão, Usuário)
+      const { data: chatData, error: chatError } = await supabase
+        .from('chats')
+        .select('id, contato_nome, contato_numero, connection_id')
+        .eq('id', chat_id)
+        .single();
 
-  try {
-    // 1. BUSCAR DADOS ESSENCIAIS (Chat, Conexão, Usuário)
-    const { data: chatData, error: chatError } = await supabase
-      .from('chats')
-      .select('id, contato_nome, contato_numero, connection_id')
-      .eq('id', chat_id)
-      .single();
+      if (chatError) throw new Error(`Erro ao buscar chat: ${chatError.message}`);
 
-    if (chatError) throw new Error(`Erro ao buscar chat: ${chatError.message}`);
+      const instanceName = chatData.connection_id;
+      const chatNumber = chatData.contato_numero;
 
-    const instanceName = chatData.connection_id;
-    const chatNumber = chatData.contato_numero;
+      const { data: userData, error: userError } = await supabase
+        .from('users')
+        .select('nome, mostra_nome_mensagens')
+        .eq('id', user_id)
+        .single();
 
-    const { data: userData, error: userError } = await supabase
-      .from('users')
-      .select('nome, mostra_nome_mensagens')
-      .eq('id', user_id)
-      .single();
+      if (userError) throw new Error(`Erro ao buscar usuário: ${userError.message}`);
 
-    if (userError) throw new Error(`Erro ao buscar usuário: ${userError.message}`);
-
-    let remetenteNome = '';
-    if (userData.mostra_nome_mensagens && userData.nome) {
-      remetenteNome = `*${userData.nome.trim()}*\n\n`;
-    }
-
-    // --- LÓGICA DE ENVIO ---
-
-    if (base64 && mimetype) {
-      let endpoint = `http://localhost:8081/message/sendMedia/${instanceName}`;
-      let payload;
-
-      if (mimetype.startsWith('image/')) {
-        payload = {
-          number: chatNumber,
-          mediatype: 'image',
-          mimetype: mimetype,
-          caption: '',
-          media: base64,
-          fileName: mensagem || 'image.png'
-        };
-      } else if (mimetype.startsWith('audio/')) {
-        // CORREÇÃO 1: Adicionar fileName ao payload de áudio
-
-        endpoint = `http://localhost:8081/message/SendWhatsAppAudio/${instanceName}`;
-
-        payload = {
-          number: chatNumber,
-          audio: base64,
-        };
-      } else {
-        const extensao = mimetype.split('/')[1] || 'dat';
-        payload = {
-          number: chatNumber,
-          mediatype: 'document',
-          mimetype: mimetype,
-          caption: remetenteNome.trim(),
-          media: base64,
-          fileName: mensagem || `documento.${extensao}`
-        };
+      let remetenteNome = '';
+      if (userData.mostra_nome_mensagens && userData.nome) {
+        remetenteNome = `*${userData.nome.trim()}*\n\n`;
       }
 
+      // --- LÓGICA DE ENVIO ---
+
+      if (base64 && mimetype) {
+        let endpoint = `http://localhost:8081/message/sendMedia/${instanceName}`;
+        let payload;
+
+        if (mimetype.startsWith('image/')) {
+          payload = {
+            number: chatNumber,
+            mediatype: 'image',
+            mimetype: mimetype,
+            caption: '',
+            media: base64,
+            fileName: mensagem || 'image.png'
+          };
+        } else if (mimetype.startsWith('audio/')) {
+          // CORREÇÃO 1: Adicionar fileName ao payload de áudio
+
+          endpoint = `http://localhost:8081/message/SendWhatsAppAudio/${instanceName}`;
+
+          payload = {
+            number: chatNumber,
+            audio: base64,
+          };
+        } else {
+          const extensao = mimetype.split('/')[1] || 'dat';
+          payload = {
+            number: chatNumber,
+            mediatype: 'document',
+            mimetype: mimetype,
+            caption: remetenteNome.trim(),
+            media: base64,
+            fileName: mensagem || `documento.${extensao}`
+          };
+        }
+
+        // Envia para a Evolution API
+        await axios.post(endpoint, payload, {
+          headers: { apikey: process.env.EVOLUTION_API_KEY },
+        });
+
+        // CORREÇÃO 2: Mover a resposta para fora do 'else'
+        // para que seja enviada para TODOS os tipos de mídia
+        res.status(201).json(mensagem || '[Mídia enviada]');
+
+      } else if (mensagem) {
+        // Se não for mídia, é uma mensagem de texto simples
+        const endpoint = `http://localhost:8081/message/sendText/${instanceName}`;
+        const textoFormatado = `${remetenteNome}${mensagem}`;
+
+        await axios.post(endpoint, {
+          number: chatNumber,
+          text: textoFormatado,
+        }, {
+          headers: { apikey: process.env.EVOLUTION_API_KEY },
+        });
+
+        res.status(201).json(mensagem);
+      } else {
+        return res.status(400).send('Corpo da requisição inválido. Mensagem ou mídia necessária.');
+      }
+
+    } catch (err) {
+      console.error('Erro no processo de envio:', err.response?.data?.response?.message || err.message);
+      res.status(500).send(`Erro ao enviar mensagem: ${err.message}`);
+    }
+  } else {
+    try {
+
       // Envia para a Evolution API
-      await axios.post(endpoint, payload, {
-        headers: { apikey: process.env.EVOLUTION_API_KEY },
-      });
-
-      // CORREÇÃO 2: Mover a resposta para fora do 'else'
-      // para que seja enviada para TODOS os tipos de mídia
-      res.status(201).json(mensagem || '[Mídia enviada]');
-
-    } else if (mensagem) {
-      // Se não for mídia, é uma mensagem de texto simples
-      const endpoint = `http://localhost:8081/message/sendText/${instanceName}`;
-      const textoFormatado = `${remetenteNome}${mensagem}`;
-
-      await axios.post(endpoint, {
-        number: chatNumber,
-        text: textoFormatado,
+      await axios.post(`http://localhost:8081/message/sendText/${connection_id}`, {
+        number: number,
+        text: mensagem,
       }, {
         headers: { apikey: process.env.EVOLUTION_API_KEY },
       });
 
       res.status(201).json(mensagem);
-    } else {
-      return res.status(400).send('Corpo da requisição inválido. Mensagem ou mídia necessária.');
-    }
 
-  } catch (err) {
-    console.error('Erro no processo de envio:', err.response?.data?.response?.message || err.message);
-    res.status(500).send(`Erro ao enviar mensagem: ${err.message}`);
+    } catch (err) {
+      console.error('Erro no processo de envio:', err.response?.data?.response?.message || err.message);
+      res.status(500).send(`Erro ao enviar mensagem: ${err.message}`);
+    }
   }
+
 });
 
 

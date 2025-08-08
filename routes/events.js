@@ -102,6 +102,8 @@ router.post('/dispatch', async (req, res) => {
             return res.status(200).send('Conexão não encontrada');
         }
 
+
+
         const userId = fullConnection.user.id;
         if (!userId) return res.status(400).send('Usuário da conexão não encontrado');
 
@@ -308,7 +310,7 @@ router.post('/dispatch', async (req, res) => {
             // Busca o chat que foi enviado a mensagem
             const { data: chatExistente, error: chatError } = await supabase
                 .from('chats')
-                .select('id')
+                .select('*')
                 .eq('contato_numero', contatoNumero)
                 .eq('connection_id', connectionId)
                 .maybeSingle();
@@ -317,7 +319,52 @@ router.post('/dispatch', async (req, res) => {
                 console.error('Erro ao buscar chat existente:', chatError.message);
             }
 
-            const chatId = chatExistente.id;
+            let chatCompleto
+
+            // 2. Se existir, pega o id
+            if (chatExistente) {
+
+                if (chatExistente.contato_nome === chatExistente.contato_numero && !data.key.fromMe) {
+                    await supabase
+                        .from('chats')
+                        .update({ contato_nome: data.pushName })
+                        .eq('id', chatExistente.id);
+                }
+
+                chatId = chatExistente.id;
+                chatCompleto = chatExistente;
+            }
+            else {
+                // 3. Senão, cria novo chat
+
+                const { profilePictureUrl } = await buscarDadosContato(contatoNumero, connection);
+
+                // Verifica se a primeira mensagem foi enviada pelo contato ou pelo cliente
+                const isContatoIniciou = !data.key.fromMe;
+                const nomeInicial = isContatoIniciou
+                    ? (data.pushName)
+                    : contatoNumero;
+
+                const { data: novoChat, error: insertChatError } = await supabase
+                    .from('chats')
+                    .insert({
+                        contato_nome: nomeInicial, //Se for a primeira mensagem do chat e for minha cria o chat com o contatoNumero no nome, Se a primeira mensagem for do contato coloca o pushName
+                        contato_numero: contatoNumero,
+                        connection_id: connectionId,
+                        ia_ativa: true,
+                        foto_perfil: profilePictureUrl
+                    })
+                    .select()
+                    .single();
+
+                if (insertChatError) {
+                    console.error('Erro ao criar novo chat:', insertChatError.message);
+                    return res.status(500).send('Erro ao criar chat');
+                }
+
+                chatId = novoChat.id;
+                chatCompleto = novoChat;
+            }
 
             // 4. Cria a mensagem
             let novaMensagem = {
@@ -444,6 +491,7 @@ router.post('/dispatch', async (req, res) => {
 
             console.log(msgCriada)
             enrichedEvent.message = msgCriada;
+            enrichedEvent.chat = chatExistente ? chatExistente :  chatCompleto
 
         }
 
