@@ -96,8 +96,11 @@ router.put('/:id', async (req, res) => {
       return /^\d{10,15}$/.test(numero);
     };
 
-    if (!validateNumero(numero)) {
-      return sendError(res, 400, 'Número inválido. Digite apenas números, com 10 a 15 dígitos.');
+    // Validação no PUT
+    if ('numero' in req.body) {
+      if (!validateNumero(req.body.numero)) {
+        return sendError(res, 400, 'Número inválido. Digite apenas números, com 10 a 15 dígitos.');
+      }
     }
 
     const { data, error } = await supabase

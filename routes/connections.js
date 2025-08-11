@@ -6,101 +6,101 @@ require('dotenv').config();
 
 const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_KEY);
 
+// Helper para erro consistente JSON
+function sendError(res, status, message) {
+  return res.status(status).json({ error: message });
+}
+
 // Salvar conexão
 router.post('/', async (req, res) => {
   const { user_id, nome, agente_id } = req.body;
 
-  // 1. Salvar conexão no Supabase 
-  const { data, error } = await supabase
-    .from('connections')
-    .insert([{
-      user_id,
-      nome,
-      numero: null,
-      status: false,
-      agente_id
-    }])
-    .select();
-
-  if (error) return res.status(500).send(error.message);
-
-  const instanceId = data[0].id;
-
+  if (!user_id || !nome || !agente_id) {
+    return sendError(res, 400, 'Todos os campos são obrigatórios.');
+  }
   try {
-    // 1. Criar instância no Evolution com o instanceName sendo o Id dela no supabase
-    const evolutionResponse = await axios.post('http://localhost:8081/instance/create', {
-      instanceName: instanceId,
-      qrcode: true,
-      groupsIgnore: true,
-      integration: 'WHATSAPP-BAILEYS',
-      webhook: {
-        url: 'http://host.docker.internal:5678/webhook/evolution',
-        events: ['CONNECTION_UPDATE', 'MESSAGES_UPSERT', 'SEND_MESSAGE'],
-      },
-    }, {
-      headers: {
-        apikey: process.env.EVOLUTION_API_KEY
-      }
-    });
+    // 1. Salvar conexão no Supabase 
+    const { data, error } = await supabase
+      .from('connections')
+      .insert([{
+        user_id,
+        nome,
+        numero: null,
+        status: false,
+        agente_id
+      }])
+      .select();
 
-    const { instance, qrcode } = evolutionResponse.data;
+    if (error) {
+      console.error('Erro ao inserir conexão no Supabase:', error);
+      return sendError(res, 500, 'Erro ao salvar conexão no banco de dados.');
+    }
 
+    if (!data || data.length === 0) {
+      return sendError(res, 500, 'Falha ao salvar conexão, dados não retornados.');
+    }
 
+    const instanceId = data[0].id;
 
-    // 3. Retornar o QR Code ao front
-    res.status(201).json({ instance: instance.instanceId, qr_code: qrcode.base64 });
-  } catch (err) {
-    console.error('Erro ao criar instância:', err.message);
-    res.status(500).send('Erro ao criar instância no Evolution');
+    try {
+      // 1. Criar instância no Evolution com o instanceName sendo o Id dela no supabase
+      const evolutionResponse = await axios.post('http://localhost:8081/instance/create', {
+        instanceName: instanceId,
+        qrcode: true,
+        groupsIgnore: true,
+        integration: 'WHATSAPP-BAILEYS',
+        webhook: {
+          url: 'http://host.docker.internal:5678/webhook/evolution',
+          events: ['CONNECTION_UPDATE', 'MESSAGES_UPSERT', 'SEND_MESSAGE'],
+        },
+      }, {
+        headers: {
+          apikey: process.env.EVOLUTION_API_KEY
+        }
+      });
+
+      const { instance, qrcode } = evolutionResponse.data;
+
+      // 3. Retornar o QR Code ao front
+      res.status(201).json(qrcode.base64);
+    } catch (err) {
+      console.error('Erro ao criar instância no Evolution:', evolutionErr.response?.data || evolutionErr.message);
+      return sendError(res, 500, 'Erro ao criar instância no Evolution.');
+    }
+  } catch (supabaseErr) {
+    console.error('Erro geral ao salvar conexão:', supabaseErr);
+    return sendError(res, 500, 'Erro inesperado ao salvar conexão.');
   }
 });
 
-
-// Listar todas conexões com usuário e agente (join)
-router.get('/', async (req, res) => {
-  const { data, error } = await supabase
-    .from('connections')
-    .select(`
-      *,
-      user:users(id, nome, email),
-      agente:agents(id, tipo_de_agente, prompt_do_agente)
-    `);
-
-  if (error) return res.status(500).send(error.message);
-  res.json(data);
-});
-
-// Buscar conexão por ID
-router.get('/:id', async (req, res) => {
-  const { id } = req.params;
-  const { data, error } = await supabase
-    .from('connections')
-    .select(`
-      *,
-      user:users(id, nome, email),
-      agente:agents(id, tipo_de_agente, prompt_do_agente)
-    `)
-    .eq('id', id)
-    .single();
-
-  if (error) return res.status(500).send(error.message);
-  res.json(data);
-});
-
-
-// Buscar conexão por ID do usuario
-router.get('/usuario/:user_id', async (req, res) => {
+// Listar conexões do usuário com usuário e agente relacionados
+router.get('/:user_id', async (req, res) => {
   const { user_id } = req.params;
-  const { data, error } = await supabase
-    .from('connections')
-    .select(`
-      *,
-      agente:agents(id, tipo_de_agente, prompt_do_agente)
-    `)
-    .eq('user_id', user_id);
 
-  if (error) return res.status(500).send(error.message);
-  res.json(data);
+  if (!user_id) {
+    return res.status(400).json({ error: 'Parâmetro user_id é obrigatório' });
+  }
+
+  try {
+    const { data, error } = await supabase
+      .from('connections')
+      .select(`
+        *,
+        user:users(id, nome, email),
+        agente:agents(id, tipo_de_agente, prompt_do_agente)
+      `)
+      .eq('user_id', user_id);
+
+    if (error) {
+      console.error('Erro ao buscar conexões:', error);
+      return res.status(500).json({ error: 'Erro ao buscar conexões.' });
+    }
+
+    res.json(data);
+  } catch (err) {
+    console.error('Erro inesperado ao listar conexões:', err);
+    res.status(500).json({ error: 'Erro inesperado ao listar conexões.' });
+  }
 });
 
 // Atualizar conexão
@@ -108,35 +108,64 @@ router.put('/:id', async (req, res) => {
   const { id } = req.params;
   const { user_id, nome, numero, status, agente_id } = req.body;
 
-  const { data, error } = await supabase
-    .from('connections')
-    .update({ user_id, nome, numero, status, agente_id })
-    .eq('id', id)
-    .select();
-
-  if (error) return res.status(500).send(error.message);
-  res.json(data);
-});
-
-// Deletar conexão
-router.delete('/:id', async (req, res) => {
-  const { id } = req.params;
-  const { error } = await supabase.from('connections').delete().eq('id', id);
-  if (error) return res.status(500).send(error.message);
-
-  try {
-    console.log(id)
-    await axios.delete(`http://localhost:8081/instance/delete/${id}`, {
-      headers: {
-        apikey: process.env.EVOLUTION_API_KEY,
-      },
-    });
-  } catch (sendError) {
-    console.error('Erro ao deletar conexão:', sendError.response?.data || sendError.message);
-    return res.status(500).send('Erro ao deletar conexão');
+  if (!id) {
+    return sendError(res, 400, 'ID da conexão é obrigatório.');
   }
 
-  res.status(200).send('Conexão deletada com sucesso');
+  try {
+    const { data, error } = await supabase
+      .from('connections')
+      .update({ user_id, nome, numero, status, agente_id })
+      .eq('id', id)
+      .select();
+
+    if (error) {
+      console.error('Erro ao atualizar conexão:', error);
+      return sendError(res, 500, 'Erro ao atualizar conexão.');
+    }
+
+    if (!data || data.length === 0) {
+      return sendError(res, 404, 'Conexão não encontrada.');
+    }
+
+    return res.json(data);
+
+  } catch (err) {
+    console.error('Erro geral ao atualizar conexão:', err);
+    return sendError(res, 500, 'Erro inesperado ao atualizar conexão.');
+  }
+});
+
+router.delete('/:id', async (req, res) => {
+  const { id } = req.params;
+
+  if (!id) {
+    return sendError(res, 400, 'ID da conexão é obrigatório para deletar.');
+  }
+
+  try {
+    const { error } = await supabase.from('connections').delete().eq('id', id);
+
+    if (error) {
+      console.error('Erro ao deletar conexão no banco:', error);
+      return sendError(res, 500, 'Erro ao deletar conexão no banco.');
+    }
+
+    try {
+      await axios.delete(`http://localhost:8081/instance/delete/${id}`, {
+        headers: { apikey: process.env.EVOLUTION_API_KEY },
+      });
+    } catch (axiosErr) {
+      console.error('Erro ao deletar instância no Evolution:', axiosErr.response?.data || axiosErr.message);
+      return sendError(res, 500, 'Erro ao deletar conexão no Evolution.');
+    }
+
+    return res.status(200).json({ message: 'Conexão deletada com sucesso.' });
+
+  } catch (err) {
+    console.error('Erro geral ao deletar conexão:', err);
+    return sendError(res, 500, 'Erro inesperado ao deletar conexão.');
+  }
 });
 
 module.exports = router;
