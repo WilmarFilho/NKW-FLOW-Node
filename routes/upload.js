@@ -42,4 +42,3 @@ router.post('/user/:id', upload.single('arquivo'), async (req, res) => {
 });
 
 module.exports = router;
-
