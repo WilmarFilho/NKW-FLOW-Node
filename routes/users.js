@@ -17,6 +17,14 @@ const sendError = (res, statusCode, rawMessage) => {
   return res.status(statusCode).json({ message: friendlyMessage });
 };
 
+// Função de validação de e-mail
+function validateEmail(email) {
+  if (!email || typeof email !== 'string') return false;
+  const trimmedEmail = email.trim();
+  if (trimmedEmail.length === 0) return false;
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmedEmail);
+}
+
 // Criar usuário
 router.post('/', async (req, res) => {
   try {
@@ -26,6 +34,17 @@ router.post('/', async (req, res) => {
       notificacao_para_entrar_conversa, notificacao_necessidade_de_entrar_conversa,
       notificacao_novo_chat
     } = req.body;
+
+    // Validação de nome
+    if (!nome || nome.trim().length < 3) {
+      return sendError(res, 400, 'O nome é obrigatório e deve ter pelo menos 3 caracteres.');
+    }
+
+    // Validação de e-mail
+    if (!validateEmail(email)) {
+      return sendError(res, 400, 'E-mail inválido. Forneça um e-mail válido.');
+    }
+
 
     // Validação de número (somente dígitos, de 10 a 15 caracteres)
     const validateNumero = (numero) => {
