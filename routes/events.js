@@ -37,7 +37,7 @@ async function extrairMensagemComMedia(data, connectionId, remetente, tipoMedia,
         switch (tipoMedia) {
             case 'image':
                 mensagem = data.message.imageMessage?.caption || '';
-                mimetype = 'image';
+                mimetype = 'image/png';
                 break;
             case 'audio':
                 mimetype = data.message.audioMessage?.mimetype || mimeDefault;
