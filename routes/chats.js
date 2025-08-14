@@ -8,12 +8,12 @@ const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_KEY
 
 // Criar chat
 router.post('/', async (req, res) => {
-  const { connection_id, contato_nome, contato_numero, ia_ativa } = req.body;
+  const { connection_id, contato_nome, contato_numero, ia_ativa, status, user_id } = req.body;
 
   try {
     const { data, error } = await supabase
       .from('chats')
-      .insert([{ connection_id, contato_nome, contato_numero, ia_ativa }])
+      .insert([{ connection_id, contato_nome, contato_numero, ia_ativa, status, user_id }])
       .select();
 
     if (error) throw error;
@@ -68,12 +68,12 @@ router.get('/connections/chats/:user_id', async (req, res) => {
 // Atualizar chat
 router.put('/:id', async (req, res) => {
   const { id } = req.params;
-  const { connection_id, contato_nome, contato_numero, ia_ativa, status } = req.body;
+  const { connection_id, contato_nome, contato_numero, ia_ativa, status, user_id  } = req.body;
 
   try {
     const { data, error } = await supabase
       .from('chats')
-      .update({ connection_id, contato_nome, contato_numero, ia_ativa, status })
+      .update({ connection_id, contato_nome, contato_numero, ia_ativa, sstatus, user_idtatus })
       .eq('id', id)
       .select('*, connections(*)');
 
