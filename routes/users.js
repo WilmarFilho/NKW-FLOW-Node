@@ -32,7 +32,7 @@ router.post('/', async (req, res) => {
       foto_perfil, email, nome, numero, senha_hash, tipo_de_usuario, status,
       modo_tela, modo_side_bar, mostra_nome_mensagens, modo_notificacao_atendente,
       notificacao_para_entrar_conversa, notificacao_necessidade_de_entrar_conversa,
-      notificacao_novo_chat
+      notificacao_novo_chat, cidade, endereco, referrals_cout, discount_percent
     } = req.body;
 
     // Validação de nome
@@ -61,7 +61,7 @@ router.post('/', async (req, res) => {
         foto_perfil, email, nome, senha_hash, tipo_de_usuario, status, numero,
         modo_tela, modo_side_bar, mostra_nome_mensagens, modo_notificacao_atendente,
         notificacao_para_entrar_conversa, notificacao_necessidade_de_entrar_conversa,
-        notificacao_novo_chat
+        notificacao_novo_chat, cidade, endereco, referrals_cout, discount_percent
       }])
       .select();
 
@@ -104,10 +104,10 @@ router.put('/:id', async (req, res) => {
   try {
     const { id } = req.params;
     const {
-      foto_perfil, email, nome, senha_hash, tipo_de_usuario, status,
-      modo_tela, modo_side_bar, mostra_nome_mensagens, modo_notificacao_atendente,
-      notificacao_para_entrar_conversa, notificacao_necessidade_de_entrar_conversa,
-      notificacao_novo_chat, numero
+        foto_perfil, email, nome, senha_hash, tipo_de_usuario, status, numero,
+        modo_tela, modo_side_bar, mostra_nome_mensagens, modo_notificacao_atendente,
+        notificacao_para_entrar_conversa, notificacao_necessidade_de_entrar_conversa,
+        notificacao_novo_chat, cidade, endereco, referrals_cout, discount_percent
     } = req.body;
 
     // Validação de número (somente dígitos, de 10 a 15 caracteres)
@@ -125,10 +125,10 @@ router.put('/:id', async (req, res) => {
     const { data, error } = await supabase
       .from('users')
       .update({
-        foto_perfil, email, nome, senha_hash, tipo_de_usuario, status,
+        foto_perfil, email, nome, senha_hash, tipo_de_usuario, status, numero,
         modo_tela, modo_side_bar, mostra_nome_mensagens, modo_notificacao_atendente,
         notificacao_para_entrar_conversa, notificacao_necessidade_de_entrar_conversa,
-        notificacao_novo_chat
+        notificacao_novo_chat, cidade, endereco, referrals_cout, discount_percent
       })
       .eq('id', id)
       .select();
