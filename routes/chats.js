@@ -73,7 +73,7 @@ router.put('/:id', async (req, res) => {
   try {
     const { data, error } = await supabase
       .from('chats')
-      .update({ connection_id, contato_nome, contato_numero, ia_ativa, sstatus, user_idtatus })
+      .update({ connection_id, contato_nome, contato_numero, ia_ativa, status, user_id })
       .eq('id', id)
       .select('*, connections(*)');
 
