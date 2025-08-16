@@ -11,6 +11,7 @@ const chatsRoutes = require('./routes/chats');
 const messagesRoutes = require('./routes/messages');
 const chats_readsRoutes = require('./routes/chats_reads');
 const uploadRoutes = require("./routes/upload");
+const create_usersRoutes = require("./routes/create_users");
 const { router: eventsRoutes } = require('./routes/events');
 
 // Inicia Servidor Express
@@ -33,6 +34,7 @@ app.use('/messages',messagesRoutes);
 app.use('/chats_reads', chats_readsRoutes);
 app.use('/events',eventsRoutes);
 app.use('/upload', uploadRoutes);
+app.use('/createUser', create_usersRoutes);
 
 //PORTA DO SERVER
 const PORT = 5679;
