@@ -8,7 +8,8 @@ const attendantsRoutes = require('./routes/attendants');
 const agentsRoutes = require('./routes/agents');
 const connectionsRoutes = require('./routes/connections');
 const chatsRoutes = require('./routes/chats');
-const messagesRoutes = require('./routes/messages')
+const messagesRoutes = require('./routes/messages');
+const chats_readsRoutes = require('./routes/chats_reads');
 const uploadRoutes = require("./routes/upload");
 const { router: eventsRoutes } = require('./routes/events');
 
@@ -29,6 +30,7 @@ app.use('/agents', agentsRoutes);
 app.use('/connections', connectionsRoutes);
 app.use('/chats', chatsRoutes);
 app.use('/messages',messagesRoutes);
+app.use('/chats_reads', chats_readsRoutes);
 app.use('/events',eventsRoutes);
 app.use('/upload', uploadRoutes);
 
