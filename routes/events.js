@@ -54,6 +54,8 @@ async function extrairMensagemComMedia(data, connectionId, remetente, tipoMedia,
         }
 
         return {
+            id: campoMensagem.id,
+            quote_id: campoMensagem.quote_id,
             chat_id: campoMensagem.chat_id,
             remetente,
             mensagem,
@@ -188,10 +190,37 @@ router.post('/dispatch', async (req, res) => {
                 ? (data.key.fromMe ? 'cliente' : 'humano')
                 : 'cliente';
 
+            let quoteId = null;
+
+            // Verifica se existe mensagem citada
+            if (data.contextInfo?.stanzaId) {
+
+                const quotedStanzaId = data.contextInfo.stanzaId;
+
+                // Busca a mensagem citada no banco
+                const { data: msgCitada, error: quoteError } = await supabase
+                    .from('messages')
+                    .select('id')
+                    .eq('id', quotedStanzaId)
+                    .maybeSingle();
+
+                if (quoteError) {
+                    console.error('Erro ao buscar mensagem citada:', quoteError.message);
+                }
+
+                if (msgCitada) {
+                    quoteId = msgCitada.id;
+                } else {
+                    console.warn('Mensagem citada não encontrada no banco:', quotedStanzaId);
+                }
+            }
+
             let novaMensagem = {
+                id: data.key.id,
                 chat_id: chatId,
                 remetente,
                 mensagem: data.message?.conversation || null,
+                quote_id: quoteId 
             };
 
             // Tenta extrair mídia, se existir

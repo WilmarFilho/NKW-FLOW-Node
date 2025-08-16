@@ -12,6 +12,8 @@ const { eventClientsByUser } = require('./events.js');
 router.post('/', async (req, res) => {
   const { user_id, chat_id, mensagem, mimetype, base64, connection_id, number, remetente, quote_id, file_name } = req.body;
 
+  console.log(quote_id)
+
   // Validação básica
   if (!mensagem && !base64) {
     return res.status(400).send('Mensagem ou mídia (base64) é obrigatória.');
@@ -20,7 +22,7 @@ router.post('/', async (req, res) => {
   if (base64 && !mimetype) {
     return res.status(400).send('Para enviar mídia, o mimetype é obrigatório.');
   }
-  
+
   if (chat_id) {
     try {
       // 1. BUSCAR DADOS ESSENCIAIS (Chat, Conexão, Usuário)
@@ -66,13 +68,29 @@ router.post('/', async (req, res) => {
             mimetype: mimetype,
             caption: '',
             media: base64,
-            fileName: mensagem || 'image.png'
+            fileName: mensagem || 'image.png',
+            ...(quote_id && {
+              quoted: {
+                key: {
+                  id: quote_id
+                },
+
+              }
+            })
           };
         } else if (mimetype.startsWith('audio/')) {
           endpoint = `http://localhost:8081/message/SendWhatsAppAudio/${instanceName}`;
           payload = {
             number: chatNumber,
             audio: base64,
+            ...(quote_id && {
+              quoted: {
+                key: {
+                  id: quote_id
+                },
+
+              }
+            })
           };
         } else {
           const extensao = mimetype.split('/')[1] || 'dat';
@@ -82,7 +100,15 @@ router.post('/', async (req, res) => {
             mimetype: mimetype,
             caption: remetenteNome.trim(),
             media: base64,
-            fileName: mensagem || `documento.${extensao}`
+            fileName: mensagem || `documento.${extensao}`,
+            ...(quote_id && {
+              quoted: {
+                key: {
+                  id: quote_id
+                },
+
+              }
+            })
           };
         }
 
@@ -94,14 +120,28 @@ router.post('/', async (req, res) => {
         res.status(201).json(mensagem || '[Mídia enviada]');
 
       } else if (mensagem) {
+
         // Mensagem de texto simples
         const endpoint = `http://localhost:8081/message/sendText/${instanceName}`;
         const textoFormatado = `${remetenteNome}${mensagem}`;
 
-        await axios.post(endpoint, {
+        const payload = {
           number: chatNumber,
           text: textoFormatado,
-        }, {
+          ...(quote_id && {
+            quoted: {
+              key: {
+                id: quote_id
+              },
+
+            }
+          })
+        };
+
+        console.log(payload)
+        console.log(payload.quoted)
+
+        await axios.post(endpoint, payload, {
           headers: { apikey: process.env.EVOLUTION_API_KEY },
         });
 
@@ -141,10 +181,20 @@ router.get('/chat/:chat_id', async (req, res) => {
 
   try {
     const { data, error } = await supabase
-      .from('messages')
-      .select('*')
-      .eq('chat_id', chat_id)
-      .order('criado_em', { ascending: true });
+  .from('messages')
+  .select(`
+    *,
+    quote_message: quote_id (
+      id,
+      mensagem,
+      mimetype,
+      remetente,
+      criado_em
+    )
+  `)
+  .eq('chat_id', chat_id)
+  .order('criado_em', { ascending: true });
+
 
     if (error) {
       console.error('Erro ao buscar mensagens:', error);
