@@ -92,6 +92,78 @@ router.put('/:id', async (req, res) => {
   }
 });
 
+// Buscar chat por id (retorna no mesmo formato da sua função SQL)
+router.get('/:id', async (req, res) => {
+  const { id } = req.params;
+
+  try {
+    // 1) Chat base
+    const { data: chat, error: chatError } = await supabase
+      .from('chats')
+      .select('id, contato_nome, contato_numero, connection_id, ia_ativa, foto_perfil, status, user_id')
+      .eq('id', id)
+      .maybeSingle();
+
+    if (chatError) throw chatError;
+    if (!chat) return res.status(404).json({ error: 'Chat não encontrado' });
+
+    // 2) Última mensagem
+    const { data: lastMsg, error: msgError } = await supabase
+      .from('messages')
+      .select('mensagem, criado_em')
+      .eq('chat_id', chat.id)
+      .order('criado_em', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (msgError) throw msgError;
+
+    // 3) Connection (id, nome, agente_id)
+    const { data: conn, error: connError } = await supabase
+      .from('connections')
+      .select('id, nome, agente_id')
+      .eq('id', chat.connection_id)
+      .maybeSingle();
+    if (connError) throw connError;
+
+    // 4) Agent (id, tipo_agente)
+    let agente = null;
+    if (conn?.agente_id) {
+      const { data: ag, error: agError } = await supabase
+        .from('agents') 
+        .select('id, tipo_de_agente')
+        .eq('id', conn.agente_id)
+        .maybeSingle();
+      if (agError) throw agError;
+      agente = ag ?? null;
+    }
+
+    // 5) Monta o payload exatamente como sua função faz
+    const payload = {
+      id: chat.id,
+      contato_nome: chat.contato_nome,
+      contato_numero: chat.contato_numero,
+      connection_id: chat.connection_id,
+      ia_ativa: chat.ia_ativa,
+      foto_perfil: chat.foto_perfil,
+      status: chat.status,
+      user_id: chat.user_id,
+      ultima_mensagem: lastMsg?.mensagem ?? null,
+      mensagem_data: lastMsg?.criado_em ?? null,
+      connection: {
+        id: conn?.id ?? null,
+        nome: conn?.nome ?? null,
+        agente_id: conn?.agente_id ?? null,
+        agente: agente, // { id, tipo_agente } ou null
+      },
+    };
+
+    res.json(payload);
+  } catch (err) {
+    console.error('Erro ao buscar chat:', err);
+    res.status(500).json({ error: 'Erro interno' });
+  }
+});
+
 // Atualiza foto de perfil do chat
 router.put('/fetchImage/:chatId', async (req, res) => {
   const { chatId } = req.params;

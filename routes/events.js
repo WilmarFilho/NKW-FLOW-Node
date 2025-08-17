@@ -190,17 +190,17 @@ router.post('/dispatch', async (req, res) => {
                 ? (data.key.fromMe ? 'cliente' : 'humano')
                 : 'cliente';
 
+            let quoteMessage = null;
             let quoteId = null;
 
             // Verifica se existe mensagem citada
             if (data.contextInfo?.stanzaId) {
-
                 const quotedStanzaId = data.contextInfo.stanzaId;
 
-                // Busca a mensagem citada no banco
+                // Busca a mensagem citada completa no banco
                 const { data: msgCitada, error: quoteError } = await supabase
                     .from('messages')
-                    .select('id')
+                    .select('id, mensagem, mimetype, remetente, base64') // 🔑 pega os campos que o front usa
                     .eq('id', quotedStanzaId)
                     .maybeSingle();
 
@@ -210,17 +210,19 @@ router.post('/dispatch', async (req, res) => {
 
                 if (msgCitada) {
                     quoteId = msgCitada.id;
+                    quoteMessage = msgCitada;
                 } else {
                     console.warn('Mensagem citada não encontrada no banco:', quotedStanzaId);
                 }
             }
+
 
             let novaMensagem = {
                 id: data.key.id,
                 chat_id: chatId,
                 remetente,
                 mensagem: data.message?.conversation || null,
-                quote_id: quoteId 
+                quote_id: quoteId,
             };
 
             // Tenta extrair mídia, se existir
@@ -249,8 +251,14 @@ router.post('/dispatch', async (req, res) => {
                 return res.status(500).send('Erro ao salvar mensagem');
             }
 
-            enrichedEvent.message = msgCriada;
+
+            enrichedEvent.message = {
+                ...msgCriada,
+                quote_message: quoteMessage || null,
+            };
+
             enrichedEvent.chat = chatCompleto || chatExistente;
+            console.log(enrichedEvent)
         }
 
         if (eventClientsByUser[userId]) {
