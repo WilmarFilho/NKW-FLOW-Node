@@ -31,44 +31,55 @@ router.get('/connections/chats/:user_id', async (req, res) => {
   const { agente_id } = req.query;
 
   try {
-    // Busca conexões do usuário (opcional filtro por agente)
-    let query = supabase.from('connections').select('id').eq('user_id', user_id);
+    // 1) Busca conexões do usuário (opcional filtro por agente)
+    let query = supabase
+      .from('connections')
+      .select('id')
+      .eq('user_id', user_id);
 
     if (agente_id) query = query.eq('agente_id', agente_id);
 
     const { data: conexoes, error: conexoesError } = await query;
-
     if (conexoesError) throw conexoesError;
 
     if (!conexoes || conexoes.length === 0) return res.json([]);
 
-    // Chama RPC para cada conexão e espera resultados
-    const chamadas = conexoes.map(c =>
-      supabase.rpc('chats_com_ultima_mensagem', { connection_id: c.id })
-    );
+    console.log("Conexões encontradas:", conexoes);
 
-    const resultados = await Promise.all(chamadas);
+    // 2) Chama RPC para cada conexão de forma segura
+    const chamadas = conexoes.map(c => {
+      if (!c.id) return null;
+      return supabase.rpc('chats_com_ultima_mensagem', { connection_id: c.id, user_id });
+    }).filter(Boolean);
 
-    // Remove duplicatas por chat id
-    const todosOsChats = resultados
-      .flatMap(r => r.data ?? [])
-      .reduce((acc, chat) => {
-        if (!acc.some(c => c.id === chat.id)) acc.push(chat);
-        return acc;
-      }, []);
+    const resultados = await Promise.allSettled(chamadas);
+
+    console.log("Resultados da RPC:", JSON.stringify(resultados, null, 2));
+
+    // 3) Extrai só os fulfilled
+    const chats = resultados
+      .filter(r => r.status === 'fulfilled' && r.value.data)
+      .flatMap(r => r.value.data);
+
+    // 4) Remove duplicatas por chat.id
+    const todosOsChats = chats.reduce((acc, chat) => {
+      if (!acc.some(c => c.id === chat.id)) acc.push(chat);
+      return acc;
+    }, []);
 
     res.json(todosOsChats);
 
   } catch (err) {
-    console.error('Erro ao listar chats do usuário:', err.message);
+    console.error('Erro ao listar chats do usuário:', err);
     res.status(500).send('Erro interno');
   }
 });
 
+
 // Atualizar chat
 router.put('/:id', async (req, res) => {
   const { id } = req.params;
-  const { connection_id, contato_nome, contato_numero, ia_ativa, status, user_id  } = req.body;
+  const { connection_id, contato_nome, contato_numero, ia_ativa, status, user_id } = req.body;
 
   try {
     const { data, error } = await supabase
@@ -92,77 +103,25 @@ router.put('/:id', async (req, res) => {
   }
 });
 
-// Buscar chat por id (retorna no mesmo formato da sua função SQL)
+// Buscar chat por ID
 router.get('/:id', async (req, res) => {
   const { id } = req.params;
 
   try {
-    // 1) Chat base
-    const { data: chat, error: chatError } = await supabase
-      .from('chats')
-      .select('id, contato_nome, contato_numero, connection_id, ia_ativa, foto_perfil, status, user_id')
-      .eq('id', id)
+    const { data, error } = await supabase
+      .rpc('chat_por_id', { p_chat_id: id })
       .maybeSingle();
 
-    if (chatError) throw chatError;
-    if (!chat) return res.status(404).json({ error: 'Chat não encontrado' });
+    if (error) throw error;
+    if (!data) return res.status(404).json({ error: 'Chat não encontrado' });
 
-    // 2) Última mensagem
-    const { data: lastMsg, error: msgError } = await supabase
-      .from('messages')
-      .select('mensagem, criado_em')
-      .eq('chat_id', chat.id)
-      .order('criado_em', { ascending: false })
-      .limit(1)
-      .maybeSingle();
-    if (msgError) throw msgError;
-
-    // 3) Connection (id, nome, agente_id)
-    const { data: conn, error: connError } = await supabase
-      .from('connections')
-      .select('id, nome, agente_id')
-      .eq('id', chat.connection_id)
-      .maybeSingle();
-    if (connError) throw connError;
-
-    // 4) Agent (id, tipo_agente)
-    let agente = null;
-    if (conn?.agente_id) {
-      const { data: ag, error: agError } = await supabase
-        .from('agents') 
-        .select('id, tipo_de_agente')
-        .eq('id', conn.agente_id)
-        .maybeSingle();
-      if (agError) throw agError;
-      agente = ag ?? null;
-    }
-
-    // 5) Monta o payload exatamente como sua função faz
-    const payload = {
-      id: chat.id,
-      contato_nome: chat.contato_nome,
-      contato_numero: chat.contato_numero,
-      connection_id: chat.connection_id,
-      ia_ativa: chat.ia_ativa,
-      foto_perfil: chat.foto_perfil,
-      status: chat.status,
-      user_id: chat.user_id,
-      ultima_mensagem: lastMsg?.mensagem ?? null,
-      mensagem_data: lastMsg?.criado_em ?? null,
-      connection: {
-        id: conn?.id ?? null,
-        nome: conn?.nome ?? null,
-        agente_id: conn?.agente_id ?? null,
-        agente: agente, // { id, tipo_agente } ou null
-      },
-    };
-
-    res.json(payload);
+    res.json(data);
   } catch (err) {
     console.error('Erro ao buscar chat:', err);
     res.status(500).json({ error: 'Erro interno' });
   }
 });
+
 
 // Atualiza foto de perfil do chat
 router.put('/fetchImage/:chatId', async (req, res) => {
@@ -215,5 +174,48 @@ router.delete('/:id', async (req, res) => {
     res.status(500).send(err.message);
   }
 });
+
+// Marcar chat como lido
+router.post('/:id/read', async (req, res) => {
+  const { id: chatId } = req.params;
+
+  if (!chatId) {
+    return res.status(400).json({ error: 'chatId é obrigatório' });
+  }
+
+  try {
+    // Busca o connection_id do chat
+    const { data: chat, error: chatError } = await supabase
+      .from('chats')
+      .select('connection_id')
+      .eq('id', chatId)
+      .maybeSingle();
+
+    if (chatError) throw chatError;
+    if (!chat) {
+      return res.status(404).json({ error: 'Chat não encontrado' });
+    }
+
+    // Marca como lido (upsert em chats_reads)
+    const { error } = await supabase
+      .from('chats_reads')
+      .upsert(
+        {
+          chat_id: chatId,
+          connection_id: chat.connection_id,
+          last_read_at: new Date().toISOString(),
+        },
+        { onConflict: ['chat_id', 'connection_id'] }
+      );
+
+    if (error) throw error;
+
+    res.status(200).json({ success: true });
+  } catch (err) {
+    console.error('Erro ao marcar chat como lido:', err.message);
+    res.status(500).json({ error: 'Erro ao marcar chat como lido' });
+  }
+});
+
 
 module.exports = router;

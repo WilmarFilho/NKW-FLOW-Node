@@ -172,6 +172,7 @@ router.post('/dispatch', async (req, res) => {
                         contato_numero: contatoNumero,
                         connection_id: connectionId,
                         ia_ativa: true,
+                        status: 'Open',
                         foto_perfil: profilePictureUrl
                     })
                     .select()
@@ -187,8 +188,8 @@ router.post('/dispatch', async (req, res) => {
             }
 
             let remetente = (event === 'messages.upsert')
-                ? (data.key.fromMe ? 'cliente' : 'humano')
-                : 'cliente';
+                ? (data.key.fromMe ? 'Usuário' : 'Contato')
+                : 'Usuário';
 
             let quoteMessage = null;
             let quoteId = null;
