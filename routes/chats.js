@@ -44,8 +44,6 @@ router.get('/connections/chats/:user_id', async (req, res) => {
 
     if (!conexoes || conexoes.length === 0) return res.json([]);
 
-    console.log("Conexões encontradas:", conexoes);
-
     // 2) Chama RPC para cada conexão de forma segura
     const chamadas = conexoes.map(c => {
       if (!c.id) return null;
@@ -53,8 +51,6 @@ router.get('/connections/chats/:user_id', async (req, res) => {
     }).filter(Boolean);
 
     const resultados = await Promise.allSettled(chamadas);
-
-    console.log("Resultados da RPC:", JSON.stringify(resultados, null, 2));
 
     // 3) Extrai só os fulfilled
     const chats = resultados
@@ -74,7 +70,6 @@ router.get('/connections/chats/:user_id', async (req, res) => {
     res.status(500).send('Erro interno');
   }
 });
-
 
 // Atualizar chat
 router.put('/:id', async (req, res) => {
@@ -174,48 +169,5 @@ router.delete('/:id', async (req, res) => {
     res.status(500).send(err.message);
   }
 });
-
-// Marcar chat como lido
-router.post('/:id/read', async (req, res) => {
-  const { id: chatId } = req.params;
-
-  if (!chatId) {
-    return res.status(400).json({ error: 'chatId é obrigatório' });
-  }
-
-  try {
-    // Busca o connection_id do chat
-    const { data: chat, error: chatError } = await supabase
-      .from('chats')
-      .select('connection_id')
-      .eq('id', chatId)
-      .maybeSingle();
-
-    if (chatError) throw chatError;
-    if (!chat) {
-      return res.status(404).json({ error: 'Chat não encontrado' });
-    }
-
-    // Marca como lido (upsert em chats_reads)
-    const { error } = await supabase
-      .from('chats_reads')
-      .upsert(
-        {
-          chat_id: chatId,
-          connection_id: chat.connection_id,
-          last_read_at: new Date().toISOString(),
-        },
-        { onConflict: ['chat_id', 'connection_id'] }
-      );
-
-    if (error) throw error;
-
-    res.status(200).json({ success: true });
-  } catch (err) {
-    console.error('Erro ao marcar chat como lido:', err.message);
-    res.status(500).json({ error: 'Erro ao marcar chat como lido' });
-  }
-});
-
 
 module.exports = router;

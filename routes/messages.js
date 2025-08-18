@@ -12,8 +12,6 @@ const { eventClientsByUser } = require('./events.js');
 router.post('/', async (req, res) => {
   const { user_id, chat_id, mensagem, mimetype, base64, connection_id, number, remetente, quote_id, file_name } = req.body;
 
-  console.log(quote_id)
-
   // Validação básica
   if (!mensagem && !base64) {
     return res.status(400).send('Mensagem ou mídia (base64) é obrigatória.');
@@ -137,9 +135,6 @@ router.post('/', async (req, res) => {
             }
           })
         };
-
-        console.log(payload)
-        console.log(payload.quoted)
 
         await axios.post(endpoint, payload, {
           headers: { apikey: process.env.EVOLUTION_API_KEY },

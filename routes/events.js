@@ -8,6 +8,35 @@ const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_KEY
 
 const eventClientsByUser = {};
 
+
+// --- Debounce de eventos para não "marcar como lido" por engano ---
+const DEBOUNCE_MS = 2000; // ajuste fino: 2~5s
+const recentMsgActivity = new Map(); // key: `${connectionId}|${numero}` -> timestamp
+
+const normalizeNumber = (remoteJid = "") =>
+    remoteJid.replace(/@s\.whatsapp\.net$/, "").trim();
+
+const makeKey = (connectionId, remoteJid) =>
+    `${connectionId}|${normalizeNumber(remoteJid)}`;
+
+function markMessageActivity(connectionId, remoteJid) {
+    if (!connectionId || !remoteJid) return;
+    recentMsgActivity.set(makeKey(connectionId, remoteJid), Date.now());
+}
+
+function shouldIgnoreChatsUpsert(connectionId, remoteJid) {
+    if (!connectionId || !remoteJid) return false;
+    const ts = recentMsgActivity.get(makeKey(connectionId, remoteJid));
+    return ts && (Date.now() - ts) <= DEBOUNCE_MS;
+}
+
+function extractRemoteJid(event, data) {
+    if (event === 'chats.upsert') return Array.isArray(data) ? data[0]?.remoteJid : null;
+    if (event === 'messages.upsert') return data?.key?.remoteJid || data?.remoteJid || null;
+    if (event === 'send.message') return data?.key?.remoteJid || data?.remoteJid || data?.to || data?.jid || null;
+    return null;
+}
+
 async function buscarDadosContato(numero, instance) {
     try {
         const { data } = await axios.post(`http://localhost:8081/chat/fetchProfilePictureUrl/${instance}`, {
@@ -99,7 +128,10 @@ router.post('/dispatch', async (req, res) => {
         return res.status(200).send('Ignorada');
     }
 
+    console.log(event)
+
     try {
+
         if (event === 'connection.update' && data.state === 'open' && data.wuid) {
             await supabase
                 .from('connections')
@@ -133,9 +165,74 @@ router.post('/dispatch', async (req, res) => {
             state: data.state,
         };
 
+        if (event === 'chats.upsert') {
+          
+            // Valida payload e remoteJid
+            const rjid = extractRemoteJid(event, data);
+            if (!rjid) {
+                console.log("⚠️ Ignorado chats.upsert sem remoteJid válido");
+                return res.status(200).send("Ignorado chats.upsert sem remoteJid");
+            }
+            
+            // Debounce: se veio logo após messages.upsert / send.message do mesmo número+instância, ignora
+            if (shouldIgnoreChatsUpsert(connection, rjid)) {
+                console.log("🛑 Ignorado chats.upsert por debounce (mensagem recente) →", { connection, rjid });
+                return res.status(200).send("Ignorado chats.upsert (debounce)");
+            }
+
+            // --- A partir daqui é um chats.upsert "legítimo" ---
+            const contato_numero = normalizeNumber(rjid);
+
+            // Busca o chat existente pelo numero e connection_id
+            const { data: chatExistente, error: chatError } = await supabase
+                .from('chats')
+                .select('*')
+                .eq('contato_numero', contato_numero)
+                .eq('connection_id', connection)
+                .maybeSingle();
+
+            if (chatError) {
+                console.error("❌ Erro ao buscar chat para chats.upsert:", chatError.message);
+                return res.status(500).send("Erro ao buscar chat");
+            }
+
+            if (!chatExistente) {
+                console.warn("⚠️ Nenhum chat encontrado para chats.upsert", { connection, data });
+                return res.status(200).send("Nenhum chat correspondente encontrado");
+            }
+
+            // Atualiza tabela chats_read (marca como lido)
+            const { error: updateError } = await supabase
+                .from('chats_reads')
+                .upsert(
+                    {
+                        chat_id: chatExistente.id,
+                        connection_id: connection,
+                        last_read_at: new Date().toISOString(),
+                    },
+                    { onConflict: ['chat_id', 'connection_id'] }
+                );
+
+            if (updateError) {
+                console.error("❌ Erro ao atualizar chats_read:", updateError.message);
+                return res.status(500).send("Erro ao atualizar chats_read");
+            }
+
+            // Enriquecendo o evento para o front
+            enrichedEvent.chat = chatExistente;
+        }
+
         if (event === 'messages.upsert' || event === 'send.message') {
-            const contatoNumero = data.key.remoteJid.replaceAll('@s.whatsapp.net', '');
+
+            const rjid = extractRemoteJid(event, data);
+
+            if (rjid && !/@g\.us$/.test(rjid)) {
+                markMessageActivity(connection, rjid);
+            }
+
+            const contatoNumero = rjid.replaceAll('@s.whatsapp.net', '');
             const connectionId = fullConnection.id;
+
             let chatId = null;
             let chatCompleto = null;
 
@@ -259,7 +356,7 @@ router.post('/dispatch', async (req, res) => {
             };
 
             enrichedEvent.chat = chatCompleto || chatExistente;
-            console.log(enrichedEvent)
+
         }
 
         if (eventClientsByUser[userId]) {
