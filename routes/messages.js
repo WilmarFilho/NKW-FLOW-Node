@@ -10,6 +10,7 @@ const { eventClientsByUser } = require('./events.js');
 
 // Rota para criar mensagem e enviar para a Evolution API
 router.post('/', async (req, res) => {
+
   const { user_id, chat_id, mensagem, mimetype, base64, connection_id, number, remetente, quote_id, file_name } = req.body;
 
   // Validação básica
@@ -204,3 +205,5 @@ router.get('/chat/:chat_id', async (req, res) => {
 });
 
 module.exports = router;
+
+

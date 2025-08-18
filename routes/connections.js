@@ -51,7 +51,7 @@ router.post('/', async (req, res) => {
         integration: 'WHATSAPP-BAILEYS',
         webhook: {
           url: 'http://host.docker.internal:5678/webhook/evolution',
-          events: ['CONNECTION_UPDATE', 'MESSAGES_UPSERT', 'SEND_MESSAGE', 'CHATS_UPSERT'],
+          events: ['CONNECTION_UPDATE', 'MESSAGES_UPSERT', 'SEND_MESSAGE', 'CHATS_UPSERT', 'MESSAGES_DELETE'],
         },
       }, {
         headers: {

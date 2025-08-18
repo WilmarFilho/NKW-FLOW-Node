@@ -8,6 +8,9 @@ const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_KEY
 
 const eventClientsByUser = {};
 
+// --- Constantes para o Supabase Storage ---
+const BUCKET_NAME = "bucket_arquivos_medias";
+const MEDIA_FOLDER = "media";
 
 // --- Debounce de eventos para não "marcar como lido" por engano ---
 const DEBOUNCE_MS = 2000; // ajuste fino: 2~5s
@@ -33,6 +36,7 @@ function shouldIgnoreChatsUpsert(connectionId, remoteJid) {
 function extractRemoteJid(event, data) {
     if (event === 'chats.upsert') return Array.isArray(data) ? data[0]?.remoteJid : null;
     if (event === 'messages.upsert') return data?.key?.remoteJid || data?.remoteJid || null;
+    if (event === 'messages.delete') return data?.remoteJid;
     if (event === 'send.message') return data?.key?.remoteJid || data?.remoteJid || data?.to || data?.jid || null;
     return null;
 }
@@ -51,8 +55,9 @@ async function buscarDadosContato(numero, instance) {
     }
 }
 
-async function extrairMensagemComMedia(data, connectionId, remetente, tipoMedia, campoMensagem, mimeDefault) {
+async function processarMensagemComMedia(data, connectionId, remetente, tipoMedia, campoMensagem, mimeDefault) {
     try {
+
         const response = await axios.post(
             `http://localhost:8081/chat/getBase64FromMediaMessage/${connectionId}`,
             { message: data },
@@ -60,6 +65,49 @@ async function extrairMensagemComMedia(data, connectionId, remetente, tipoMedia,
         );
 
         const base64 = response?.data?.base64 || null;
+
+        if (!base64) {
+            console.error(`Falha ao obter base64 da mídia (${tipoMedia}). A API não retornou o conteúdo.`);
+            return null;
+        }
+
+        // ETAPA 2: Converter base64 para Buffer
+        const fileBuffer = Buffer.from(base64, 'base64');
+
+        // ETAPA 3: Criar um nome de arquivo único
+        const mimeType = (
+            data.message.imageMessage?.mimetype ||
+            data.message.audioMessage?.mimetype ||
+            data.message.documentMessage?.mimetype ||
+            mimeDefault
+        );
+
+        const fileExtension = mimeType.split('/')[1] || 'bin';
+
+        const fileName = `${MEDIA_FOLDER}/${campoMensagem.id}.${fileExtension}`;
+
+        // ETAPA 4: Fazer upload do buffer para o Supabase Storage
+        const { error: uploadError } = await supabase.storage
+            .from(BUCKET_NAME)
+            .upload(fileName, fileBuffer, {
+                contentType: mimeDefault,
+                upsert: true,
+            });
+
+        if (uploadError) {
+            console.error(`Erro no upload para o Supabase (${tipoMedia}):`, uploadError.message);
+            return null; // Falha a operação se o upload não funcionar
+        }
+
+        // ETAPA 5: Obter a URL pública do arquivo
+        const { data: urlData } = supabase.storage
+            .from(BUCKET_NAME)
+            .getPublicUrl(fileName);
+
+        const publicUrl = urlData.publicUrl;
+        console.log(`✅ Mídia salva com sucesso em: ${publicUrl}`);
+
+        // ETAPA 6: Montar o objeto final da mensagem com a URL
         let mensagem = null;
         let mimetype = mimeDefault;
 
@@ -70,11 +118,9 @@ async function extrairMensagemComMedia(data, connectionId, remetente, tipoMedia,
                 break;
             case 'audio':
                 mimetype = data.message.audioMessage?.mimetype || mimeDefault;
-                mensagem = null;
                 break;
             case 'sticker':
                 mimetype = data.message.stickerMessage?.mimetype || mimeDefault;
-                mensagem = null;
                 break;
             case 'document':
                 mimetype = data.message.documentMessage?.mimetype || mimeDefault;
@@ -89,12 +135,12 @@ async function extrairMensagemComMedia(data, connectionId, remetente, tipoMedia,
             remetente,
             mensagem,
             mimetype,
-            base64,
+            base64: publicUrl, // <-- IMPORTANTE: Salvamos a URL no campo 'base64'
             ...(tipoMedia === 'document' && campoMensagem.nome_arquivo ? { nome_arquivo: campoMensagem.nome_arquivo } : {})
         };
 
     } catch (err) {
-        console.error(`Erro ao buscar base64 da mídia (${tipoMedia}):`, err.message);
+        console.error(`Erro CRÍTICO ao processar mídia (${tipoMedia}):`, err);
         return null;
     }
 }
@@ -166,14 +212,14 @@ router.post('/dispatch', async (req, res) => {
         };
 
         if (event === 'chats.upsert') {
-          
+
             // Valida payload e remoteJid
             const rjid = extractRemoteJid(event, data);
             if (!rjid) {
                 console.log("⚠️ Ignorado chats.upsert sem remoteJid válido");
                 return res.status(200).send("Ignorado chats.upsert sem remoteJid");
             }
-            
+
             // Debounce: se veio logo após messages.upsert / send.message do mesmo número+instância, ignora
             if (shouldIgnoreChatsUpsert(connection, rjid)) {
                 console.log("🛑 Ignorado chats.upsert por debounce (mensagem recente) →", { connection, rjid });
@@ -325,16 +371,17 @@ router.post('/dispatch', async (req, res) => {
 
             // Tenta extrair mídia, se existir
             if (data.message?.imageMessage) {
-                const mediaMsg = await extrairMensagemComMedia(data, connectionId, remetente, 'image', novaMensagem, 'image/png');
+                const mediaMsg = await processarMensagemComMedia(data, connectionId, remetente, 'image', novaMensagem, 'image/png');
                 if (mediaMsg) novaMensagem = mediaMsg;
             } else if (data.message?.audioMessage) {
-                const mediaMsg = await extrairMensagemComMedia(data, connectionId, remetente, 'audio', novaMensagem, 'audio/ogg');
+                const mediaMsg = await processarMensagemComMedia(data, connectionId, remetente, 'audio', novaMensagem, 'audio/ogg');
                 if (mediaMsg) novaMensagem = mediaMsg;
             } else if (data.message?.stickerMessage) {
-                const mediaMsg = await extrairMensagemComMedia(data, connectionId, remetente, 'sticker', novaMensagem, 'image/webp');
+                console.log(JSON.stringify(data.message, null, 2))
+                const mediaMsg = await processarMensagemComMedia(data, connectionId, remetente, 'sticker', novaMensagem, 'image/webp');
                 if (mediaMsg) novaMensagem = mediaMsg;
             } else if (data.message?.documentMessage) {
-                const mediaMsg = await extrairMensagemComMedia(data, connectionId, remetente, 'document', novaMensagem, 'application/octet-stream');
+                const mediaMsg = await processarMensagemComMedia(data, connectionId, remetente, 'document', novaMensagem, 'application/octet-stream');
                 if (mediaMsg) novaMensagem = mediaMsg;
             }
 
@@ -357,6 +404,35 @@ router.post('/dispatch', async (req, res) => {
 
             enrichedEvent.chat = chatCompleto || chatExistente;
 
+        }
+
+        if (event === 'messages.delete') {
+
+            const messageId = data?.id;
+
+            if (!messageId) {
+                console.warn('⚠️ Ignorado messages.delete: Faltando ID da mensagem.');
+                return res.status(200).send('Ignorado, dados insuficientes.');
+            }
+
+            // Atualiza a coluna 'excluded' para true em vez de deletar
+            const { error: updateError } = await supabase
+                .from('messages')
+                .update({ excluded: true }) // <--- MUDANÇA PRINCIPAL AQUI
+                .eq('id', messageId);
+
+            if (updateError) {
+                console.error(`❌ Erro ao marcar a mensagem ${messageId} como excluída:`, updateError.message);
+                // Não enviamos o evento ao front se a atualização no DB falhar
+                return res.status(500).send('Erro ao marcar mensagem como excluída.');
+            }
+
+            console.log(`✅ Mensagem marcada como excluída no DB: ${messageId}`);
+
+            // Prepara o payload para o frontend
+            enrichedEvent.deletedMessage = {
+                id: messageId
+            };
         }
 
         if (eventClientsByUser[userId]) {
