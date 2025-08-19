@@ -146,54 +146,54 @@ async function processarMensagemComMedia(data, connectionId, remetente, tipoMedi
 }
 
 router.get('/:user_id', async (req, res) => {
-  const { user_id } = req.params;
+    const { user_id } = req.params;
 
-  // Primeiro pega o tipo de usuário
-  const { data: user, error: userError } = await supabase
-    .from('users')
-    .select('id, tipo_de_usuario')
-    .eq('id', user_id)
-    .maybeSingle();
+    // Primeiro pega o tipo de usuário
+    const { data: user, error: userError } = await supabase
+        .from('users')
+        .select('id, tipo_de_usuario')
+        .eq('id', user_id)
+        .maybeSingle();
 
-  if (userError || !user) {
-    return res.status(400).json({ error: 'Usuário não encontrado' });
-  }
-
-  let resolvedUserId = user.id;
-
-  if (user.tipo_de_usuario !== 'admin') {
-    // Se for atendente, resolve o admin
-    const { data: attendant, error: attError } = await supabase
-      .from('attendants')
-      .select('user_admin_id')
-      .eq('user_id', user.id)
-      .maybeSingle();
-
-    if (attError || !attendant) {
-      return res.status(400).json({ error: 'Atendente não vinculado a admin' });
+    if (userError || !user) {
+        return res.status(400).json({ error: 'Usuário não encontrado' });
     }
 
-    resolvedUserId = attendant.user_admin_id;
-    console.log(`👥 Atendente conectado → user_id=${user.id}, admin_id=${resolvedUserId}`);
-  } else {
-    console.log(`👤 Admin conectado → user_id=${user.id}`);
-  }
+    let resolvedUserId = user.id;
 
-  // Configura SSE
-  res.setHeader('Content-Type', 'text/event-stream');
-  res.setHeader('Cache-Control', 'no-cache');
-  res.setHeader('Connection', 'keep-alive');
-  res.flushHeaders();
+    if (user.tipo_de_usuario !== 'admin') {
+        // Se for atendente, resolve o admin
+        const { data: attendant, error: attError } = await supabase
+            .from('attendants')
+            .select('user_admin_id')
+            .eq('user_id', user.id)
+            .maybeSingle();
 
-  if (!eventClientsByUser[resolvedUserId]) {
-    eventClientsByUser[resolvedUserId] = [];
-  }
-  eventClientsByUser[resolvedUserId].push(res);
+        if (attError || !attendant) {
+            return res.status(400).json({ error: 'Atendente não vinculado a admin' });
+        }
 
-  req.on('close', () => {
-    eventClientsByUser[resolvedUserId] =
-      eventClientsByUser[resolvedUserId].filter(c => c !== res);
-  });
+        resolvedUserId = attendant.user_admin_id;
+        console.log(`👥 Atendente conectado → user_id=${user.id}, admin_id=${resolvedUserId}`);
+    } else {
+        console.log(`👤 Admin conectado → user_id=${user.id}`);
+    }
+
+    // Configura SSE
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection', 'keep-alive');
+    res.flushHeaders();
+
+    if (!eventClientsByUser[resolvedUserId]) {
+        eventClientsByUser[resolvedUserId] = [];
+    }
+    eventClientsByUser[resolvedUserId].push(res);
+
+    req.on('close', () => {
+        eventClientsByUser[resolvedUserId] =
+            eventClientsByUser[resolvedUserId].filter(c => c !== res);
+    });
 });
 
 
@@ -334,6 +334,16 @@ router.post('/dispatch', async (req, res) => {
                         .from('chats')
                         .update({ contato_nome: data.pushName })
                         .eq('id', chatExistente.id);
+                }
+                // Reabre chat e ativa IA se estiver fechado
+                if (chatExistente.status === 'Close') {
+                    await supabase
+                        .from('chats')
+                        .update({ status: 'Open', ia_ativa: true, user_id: null })
+                        .eq('id', chatExistente.id);
+
+                    chatExistente.status = 'Open';
+                    chatExistente.ia_ativa = true;
                 }
                 chatId = chatExistente.id;
                 chatCompleto = chatExistente;
