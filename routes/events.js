@@ -407,32 +407,49 @@ router.post('/dispatch', async (req, res) => {
         }
 
         if (event === 'messages.delete') {
+            let whatsappId;
 
-            const messageId = data?.id;
-
-            if (!messageId) {
-                console.warn('⚠️ Ignorado messages.delete: Faltando ID da mensagem.');
-                return res.status(200).send('Ignorado, dados insuficientes.');
+            // 1. Se vier do WhatsApp (formato simples)
+            if (data?.remoteJid && data?.id) {
+                whatsappId = data.id;
             }
 
-            // Atualiza a coluna 'excluded' para true em vez de deletar
+            // 2. Se vier da Evolution API (endpoint → payload detalhado)
+            if (data?.key?.id) {
+                whatsappId = data.key.id;
+            }
+
+            if (!whatsappId) {
+                console.warn("⚠️ Ignorado messages.delete: sem whatsappId válido", data);
+                return res.status(200).send("Ignorado, dados insuficientes.");
+            }
+
+            const { data: msg, error: fetchError } = await supabase
+                .from("messages")
+                .select("id")
+                .eq("id", whatsappId)
+                .single();
+
+            if (fetchError || !msg) {
+                console.warn(`⚠️ Mensagem não encontrada no banco com whatsapp_id=${whatsappId}`);
+                return res.status(200).send("Mensagem não encontrada.");
+            }
+
+            // 4. Atualiza a mensagem
             const { error: updateError } = await supabase
-                .from('messages')
-                .update({ excluded: true }) // <--- MUDANÇA PRINCIPAL AQUI
-                .eq('id', messageId);
+                .from("messages")
+                .update({ excluded: true })
+                .eq("id", msg.id);
 
             if (updateError) {
-                console.error(`❌ Erro ao marcar a mensagem ${messageId} como excluída:`, updateError.message);
-                // Não enviamos o evento ao front se a atualização no DB falhar
-                return res.status(500).send('Erro ao marcar mensagem como excluída.');
+                console.error(`❌ Erro ao marcar mensagem como excluída:`, updateError.message);
+                return res.status(500).send("Erro ao marcar mensagem como excluída.");
             }
 
-            console.log(`✅ Mensagem marcada como excluída no DB: ${messageId}`);
+            console.log(`✅ Mensagem marcada como excluída no DB: ${msg.id}`);
 
-            // Prepara o payload para o frontend
-            enrichedEvent.deletedMessage = {
-                id: messageId
-            };
+            // 5. Retorna sempre o UUID do banco (não o id da Evolution)
+            enrichedEvent.deletedMessage = { id: msg.id };
         }
 
         if (eventClientsByUser[userId]) {

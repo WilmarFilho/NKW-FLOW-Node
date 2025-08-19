@@ -177,8 +177,8 @@ router.get('/chat/:chat_id', async (req, res) => {
 
   try {
     const { data, error } = await supabase
-  .from('messages')
-  .select(`
+      .from('messages')
+      .select(`
     *,
     quote_message: quote_id (
       id,
@@ -188,8 +188,8 @@ router.get('/chat/:chat_id', async (req, res) => {
       criado_em
     )
   `)
-  .eq('chat_id', chat_id)
-  .order('criado_em', { ascending: true });
+      .eq('chat_id', chat_id)
+      .order('criado_em', { ascending: true });
 
 
     if (error) {
@@ -203,6 +203,69 @@ router.get('/chat/:chat_id', async (req, res) => {
     return res.status(500).send('Erro inesperado ao buscar mensagens.');
   }
 });
+
+// Apagar mensagem (soft delete no Supabase + Evolution API)
+router.delete('/:id', async (req, res) => {
+
+  const { id } = req.params;
+
+  try {
+    // 1. Buscar dados da mensagem + chat (pra pegar instance e número)
+    const { data: msgData, error: msgError } = await supabase
+      .from('messages')
+      .select(`
+        id,
+        excluded,
+        chat_id,
+        chats (
+          connection_id,
+          contato_numero
+        )
+      `)
+      .eq('id', id)
+      .single();
+
+    if (msgError || !msgData) {
+      console.error('Mensagem não encontrada:', msgError);
+      return res.status(404).json({ error: 'Mensagem não encontrada' });
+    }
+
+    if (msgData.excluded) {
+      return res.status(400).json({ error: 'Mensagem já excluída' });
+    }
+
+    const instanceName = msgData.chats.connection_id;
+    const remoteJid = msgData.chats.contato_numero + '@s.whatsapp.net';
+    console.log(remoteJid)
+
+    console.log(instanceName)
+
+    // 2. Apagar no WhatsApp via Evolution
+    try {
+      await axios.delete(
+        `http://localhost:8081/chat/deleteMessageForEveryone/${instanceName}`,
+        {
+          data: {
+            id: msgData.id,
+            remoteJid,
+            fromMe: true
+          },
+          headers: { apikey: process.env.EVOLUTION_API_KEY }
+        }
+      );
+
+    } catch (evoErr) {
+      console.error('Erro ao apagar no Evolution API:', evoErr.response?.data || evoErr.message);
+      return res.status(500).json({ error: 'Falha ao apagar no WhatsApp' });
+    }
+
+    return res.json({ success: true, id });
+  } catch (err) {
+    console.error('Erro inesperado ao excluir mensagem:', err);
+    return res.status(500).json({ error: 'Erro inesperado ao excluir mensagem' });
+  }
+});
+
 
 module.exports = router;
 
