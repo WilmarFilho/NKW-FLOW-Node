@@ -45,7 +45,6 @@ router.post('/', async (req, res) => {
       return sendError(res, 400, 'E-mail inválido. Forneça um e-mail válido.');
     }
 
-
     // Validação de número (somente dígitos, de 10 a 15 caracteres)
     const validateNumero = (numero) => {
       return /^\d{10,15}$/.test(numero);
@@ -58,7 +57,7 @@ router.post('/', async (req, res) => {
     const { data, error } = await supabase
       .from('users')
       .insert([{
-        foto_perfil, email, nome, numero, senha_hash, tipo_de_usuario, status,
+        foto_perfil, email, nome, numero, tipo_de_usuario, status,
       modo_tela, modo_side_bar, mostra_nome_mensagens, modo_notificacao_atendente,
       notificacao_para_entrar_conversa, notificacao_necessidade_de_entrar_conversa,
       notificacao_novo_chat, cidade, endereco, ref_code, referrals_count, discount_percent

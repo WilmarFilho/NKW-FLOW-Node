@@ -145,23 +145,57 @@ async function processarMensagemComMedia(data, connectionId, remetente, tipoMedi
     }
 }
 
-router.get('/:user_id', (req, res) => {
-    const { user_id } = req.params;
+router.get('/:user_id', async (req, res) => {
+  const { user_id } = req.params;
 
-    res.setHeader('Content-Type', 'text/event-stream');
-    res.setHeader('Cache-Control', 'no-cache');
-    res.setHeader('Connection', 'keep-alive');
-    res.flushHeaders();
+  // Primeiro pega o tipo de usuário
+  const { data: user, error: userError } = await supabase
+    .from('users')
+    .select('id, tipo_de_usuario')
+    .eq('id', user_id)
+    .maybeSingle();
 
-    if (!eventClientsByUser[user_id]) eventClientsByUser[user_id] = [];
-    eventClientsByUser[user_id].push(res);
+  if (userError || !user) {
+    return res.status(400).json({ error: 'Usuário não encontrado' });
+  }
 
-    console.log(`👤 Conectado para eventos: user_id=${user_id}`);
+  let resolvedUserId = user.id;
 
-    req.on('close', () => {
-        eventClientsByUser[user_id] = eventClientsByUser[user_id].filter(c => c !== res);
-    });
+  if (user.tipo_de_usuario !== 'admin') {
+    // Se for atendente, resolve o admin
+    const { data: attendant, error: attError } = await supabase
+      .from('attendants')
+      .select('user_admin_id')
+      .eq('user_id', user.id)
+      .maybeSingle();
+
+    if (attError || !attendant) {
+      return res.status(400).json({ error: 'Atendente não vinculado a admin' });
+    }
+
+    resolvedUserId = attendant.user_admin_id;
+    console.log(`👥 Atendente conectado → user_id=${user.id}, admin_id=${resolvedUserId}`);
+  } else {
+    console.log(`👤 Admin conectado → user_id=${user.id}`);
+  }
+
+  // Configura SSE
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Connection', 'keep-alive');
+  res.flushHeaders();
+
+  if (!eventClientsByUser[resolvedUserId]) {
+    eventClientsByUser[resolvedUserId] = [];
+  }
+  eventClientsByUser[resolvedUserId].push(res);
+
+  req.on('close', () => {
+    eventClientsByUser[resolvedUserId] =
+      eventClientsByUser[resolvedUserId].filter(c => c !== res);
+  });
 });
+
 
 router.post('/dispatch', async (req, res) => {
     const { connection, event, data } = req.body;
