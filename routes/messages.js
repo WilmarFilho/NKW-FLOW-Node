@@ -171,33 +171,52 @@ router.post('/', async (req, res) => {
 
 });
 
-// Buscar mensagens por chat_id
+// Buscar mensagens com paginação baseada no criado_em
 router.get('/chat/:chat_id', async (req, res) => {
   const { chat_id } = req.params;
+  const { limit = 20, cursor } = req.query;
 
   try {
-    const { data, error } = await supabase
+    let query = supabase
       .from('messages')
       .select(`
-    *,
-    quote_message: quote_id (
-      id,
-      mensagem,
-      mimetype,
-      remetente,
-      criado_em
-    )
-  `)
+        *,
+        quote_message: quote_id (
+          id,
+          mensagem,
+          mimetype,
+          remetente,
+          criado_em
+        )
+      `)
       .eq('chat_id', chat_id)
-      .order('criado_em', { ascending: true });
+      .order('criado_em', { ascending: false }) // mais recentes primeiro
+      .limit(limit);
 
+    // Se tiver cursor, busca mensagens mais antigas
+    if (cursor) {
+      const ts = Buffer.from(cursor, 'base64').toString('utf8');
+      query = query.lt('criado_em', ts);
+    }
+
+    const { data, error } = await query;
 
     if (error) {
       console.error('Erro ao buscar mensagens:', error);
       return res.status(500).send('Erro ao buscar mensagens.');
     }
 
-    return res.json(data);
+    // Definir novo cursor (timestamp da última mensagem retornada)
+    let nextCursor = null;
+    if (data.length > 0) {
+      const last = data[data.length - 1];
+      nextCursor = Buffer.from(last.criado_em).toString('base64');
+    }
+
+    return res.json({
+      messages: data,
+      nextCursor
+    });
   } catch (err) {
     console.error('Erro inesperado ao buscar mensagens:', err);
     return res.status(500).send('Erro inesperado ao buscar mensagens.');
