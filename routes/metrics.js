@@ -12,8 +12,6 @@ router.get("/chats/novos", async (req, res) => {
     const { period = "weekly", user_admin_id } = req.query;
     if (!user_admin_id) return res.status(401).json({ error: 'Não autorizado' });
 
-    console.log(user_admin_id)
-
     const { data: labels, error } = await supabase.rpc('get_chats_stats', { period, user_admin_id });
     if (error) throw error;
 
@@ -85,3 +83,4 @@ router.get("/chats/conexoes", async (req, res) => {
 });
 
 module.exports = router;
+
