@@ -6,12 +6,12 @@ require('dotenv').config();
 
 const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_KEY);
 
-// Helper para erro consistente JSON
+// HELPER DE ERRO
 function sendError(res, status, message) {
   return res.status(status).json({ error: message });
 }
 
-// Salvar conexão
+// CRIA NOVA CONEXÃO
 router.post('/', async (req, res) => {
   const { user_id, nome, agente_id } = req.body;
 
@@ -73,15 +73,27 @@ router.post('/', async (req, res) => {
   }
 });
 
-// Listar conexões do usuário com usuário e agente relacionados
-router.get('/:user_id', async (req, res) => {
-  const { user_id } = req.params;
-
-  if (!user_id) {
-    return res.status(400).json({ error: 'Parâmetro user_id é obrigatório' });
-  }
-
+// LISTAR CONEXÕES DO USUÁRIO 
+router.get('/', async (req, res) => {
   try {
+
+    const { user_id } = req.query;
+
+    // Verifica se o usuário é admin no banco
+    const { data: userData, error: userError } = await supabase
+      .from('users')
+      .select('tipo_de_usuario')
+      .eq('id', user_id)
+      .single();
+
+    if (userError || !userData) {
+      return res.status(404).json({ error: 'Usuário não encontrado.' });
+    }
+
+    if (userData.tipo_de_usuario !== 'admin') {
+      return res.status(403).json({ error: 'Acesso negado. Apenas administradores podem acessar conexões.' });
+    }
+
     const { data, error } = await supabase
       .from('connections')
       .select(`
@@ -96,14 +108,14 @@ router.get('/:user_id', async (req, res) => {
       return res.status(500).json({ error: 'Erro ao buscar conexões.' });
     }
 
-    res.json(data);
+    return res.json(data);
   } catch (err) {
     console.error('Erro inesperado ao listar conexões:', err);
-    res.status(500).json({ error: 'Erro inesperado ao listar conexões.' });
+    return res.status(500).json({ error: 'Erro inesperado ao listar conexões.' });
   }
 });
 
-// Atualizar conexão
+// ATUALIZAR CONEXÃO
 router.put('/:id', async (req, res) => {
   const { id } = req.params;
   const { user_id, nome, numero, status, agente_id } = req.body;
@@ -136,6 +148,7 @@ router.put('/:id', async (req, res) => {
   }
 });
 
+// DELETAR CONEXÃO 
 router.delete('/:id', async (req, res) => {
   const { id } = req.params;
 

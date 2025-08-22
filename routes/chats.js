@@ -6,7 +6,95 @@ require('dotenv').config();
 
 const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_KEY);
 
-// Criar chat
+// LISTA CHATS
+router.get('/', async (req, res) => {
+
+  const { user_id, agente_id } = req.query;
+
+
+  if (!user_id) return res.status(400).json({ error: 'User ID é obrigatório.' });
+
+  try {
+    // Descobre se é admin ou atendente
+    const { data: attendant, error: attendantError } = await supabase
+      .from('attendants')
+      .select('user_admin_id, connection_id')
+      .eq('user_id', user_id)
+      .maybeSingle();
+
+    if (attendantError) throw attendantError;
+
+    const isAttendant = Boolean(attendant?.user_admin_id);
+    const resolvedUserId = isAttendant ? attendant.user_admin_id : user_id;
+
+    // 1) Busca conexões
+    let query = supabase
+      .from('connections')
+      .select('id')
+      .eq('user_id', resolvedUserId);
+
+    if (isAttendant && attendant?.connection_id) {
+      // Se for atendente, filtra só a conexão dele
+      query = query.eq('id', attendant.connection_id);
+
+    }
+
+    if (agente_id) query = query.eq('agente_id', agente_id);
+
+    const { data: conexoes, error: conexoesError } = await query;
+    console.log(conexoes)
+    if (conexoesError) throw conexoesError;
+
+    if (!conexoes || conexoes.length === 0) return res.json([]);
+
+    // 2) Chama RPC para cada conexão
+    const chamadas = conexoes
+      .map(c =>
+        c.id && supabase.rpc('chats_com_ultima_mensagem', { connection_id: c.id })
+      )
+      .filter(Boolean);
+
+    const resultados = await Promise.allSettled(chamadas);
+
+    // 3) Extrai apenas os fulfilled
+    const chats = resultados
+      .filter(r => r.status === 'fulfilled' && r.value.data)
+      .flatMap(r => r.value.data);
+
+    // 4) Remove duplicatas
+    const todosOsChats = chats.reduce((acc, chat) => {
+      if (!acc.some(c => c.id === chat.id)) acc.push(chat);
+      return acc;
+    }, []);
+
+    // 5) Buscar donos dos chats
+    const donoIds = [...new Set(todosOsChats.map(c => c.user_id).filter(Boolean))];
+    let donos = [];
+    if (donoIds.length > 0) {
+      const { data, error } = await supabase
+        .from('users')
+        .select('id, nome')
+        .in('id', donoIds);
+      if (error) throw error;
+      donos = data;
+    }
+
+    // 6) Enriquecer chats com nome do dono
+    const chatsComDono = todosOsChats.map(chat => {
+      if (!chat.user_id) return { ...chat, user_nome: null };
+      const dono = donos.find(d => d.id === chat.user_id);
+      return { ...chat, user_nome: dono ? dono.nome : null };
+    });
+
+    res.json(chatsComDono);
+
+  } catch (err) {
+    console.error('Erro ao listar chats do usuário:', err);
+    res.status(500).send('Erro interno');
+  }
+});
+
+// CRIA UM CHAT
 router.post('/', async (req, res) => {
   const { connection_id, contato_nome, contato_numero, ia_ativa, status, user_id } = req.body;
 
@@ -25,84 +113,7 @@ router.post('/', async (req, res) => {
   }
 });
 
-// Buscar chats por user_id
-router.get('/connections/chats/:user_id', async (req, res) => {
-  const { user_id } = req.params;
-  const { agente_id } = req.query;
-
-  try {
-    // 0) Descobre se é admin ou atendente
-    const { data: attendant, error: attendantError } = await supabase
-      .from('attendants')
-      .select('user_admin_id')
-      .eq('user_id', user_id)
-      .maybeSingle();
-
-    if (attendantError) throw attendantError;
-
-    // Se for atendente, troca o id pelo do admin
-    const resolvedUserId = attendant?.user_admin_id || user_id;
-
-    // 1) Busca conexões do usuário (opcional filtro por agente)
-    let query = supabase
-      .from('connections')
-      .select('id')
-      .eq('user_id', resolvedUserId);
-
-    if (agente_id) query = query.eq('agente_id', agente_id);
-
-    const { data: conexoes, error: conexoesError } = await query;
-    if (conexoesError) throw conexoesError;
-
-    if (!conexoes || conexoes.length === 0) return res.json([]);
-
-    // 2) Chama RPC para cada conexão
-    const chamadas = conexoes
-      .map(c => c.id && supabase.rpc('chats_com_ultima_mensagem', { connection_id: c.id, user_id: resolvedUserId }))
-      .filter(Boolean);
-
-    const resultados = await Promise.allSettled(chamadas);
-
-    // 3) Extrai só os fulfilled
-    const chats = resultados
-      .filter(r => r.status === 'fulfilled' && r.value.data)
-      .flatMap(r => r.value.data);
-
-    // 4) Remove duplicatas por chat.id
-    const todosOsChats = chats.reduce((acc, chat) => {
-      if (!acc.some(c => c.id === chat.id)) acc.push(chat);
-      return acc;
-    }, []);
-
-    // 5) Buscar donos (apenas onde há user_id definido)
-    const donoIds = [...new Set(todosOsChats.map(c => c.user_id).filter(Boolean))];
-
-    let donos = [];
-    if (donoIds.length > 0) {
-      const { data, error } = await supabase
-        .from('users')
-        .select('id, nome')
-        .in('id', donoIds);
-      if (error) throw error;
-      donos = data;
-    }
-
-    // 6) Enriquecer os chats com o nome do dono
-    const chatsComDono = todosOsChats.map(chat => {
-      if (!chat.user_id) return { ...chat, user_nome: null };
-      const dono = donos.find(d => d.id === chat.user_id);
-      return { ...chat, user_nome: dono ? dono.nome : null };
-    });
-
-    res.json(chatsComDono);
-
-  } catch (err) {
-    console.error('Erro ao listar chats do usuário:', err);
-    res.status(500).send('Erro interno');
-  }
-});
-
-// Atualizar chat
+// ATUALIZA UM CHAT
 router.put('/:id', async (req, res) => {
   const { id } = req.params;
   const { connection_id, contato_nome, contato_numero, ia_ativa, status, user_id } = req.body;
@@ -138,8 +149,7 @@ router.put('/:id', async (req, res) => {
   }
 });
 
-
-// Buscar chat por ID
+// BUSCA CHAT POR ID
 router.get('/:id', async (req, res) => {
   const { id } = req.params;
 
@@ -158,8 +168,7 @@ router.get('/:id', async (req, res) => {
   }
 });
 
-
-// Atualiza foto de perfil do chat
+// ATUALIZA FOTO DE PERFIL DO CHAT
 router.put('/fetchImage/:chatId', async (req, res) => {
   const { chatId } = req.params;
   if (!chatId) return res.status(400).json({ error: 'chatId é obrigatório' });
@@ -198,7 +207,7 @@ router.put('/fetchImage/:chatId', async (req, res) => {
   }
 });
 
-// Deletar chat
+// DELETA O CHAT
 router.delete('/:id', async (req, res) => {
   const { id } = req.params;
   try {

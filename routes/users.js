@@ -77,21 +77,59 @@ router.post('/', async (req, res) => {
 });
 
 // Buscar usuário por ID
-router.get('/:id', async (req, res) => {
+router.get('/', async (req, res) => {
+  const { user_id } = req.query;
+
   try {
-    const { id } = req.params;
-    const { data, error } = await supabase
+    // Primeiro busca o usuário
+    const { data: user, error: userError } = await supabase
       .from('users')
       .select('*')
-      .eq('id', id)
+      .eq('id', user_id)
       .single();
 
-    if (error) {
-      console.error('Erro ao buscar usuário:', error.message);
-      return sendError(res, 500, error.message);
+    if (userError) {
+      console.error('Erro ao buscar usuário:', userError.message);
+      return sendError(res, 500, userError.message);
     }
 
-    res.json(data);
+    // Agora verifica se é atendente
+    const { data: attendant, error: attendantError } = await supabase
+      .from('attendants')
+      .select('connection_id, user_admin_id')
+      .eq('user_id', user_id)
+      .maybeSingle();
+
+    if (attendantError) {
+      console.error('Erro ao buscar atendente:', attendantError.message);
+      return sendError(res, 500, attendantError.message);
+    }
+
+    let responseData = { ...user, role: 'admin' };
+
+    // Se for atendente, busca também o nome da conexão
+    if (attendant?.connection_id) {
+      const { data: connection, error: connError } = await supabase
+        .from('connections')
+        .select('id, nome')
+        .eq('id', attendant.connection_id)
+        .single();
+
+      if (connError) {
+        console.error('Erro ao buscar conexão:', connError.message);
+        return sendError(res, 500, connError.message);
+      }
+
+      responseData = {
+        ...user,
+        role: 'attendant',
+        connection_id: connection?.id,
+        connection_nome: connection?.nome,
+        user_admin_id: attendant.user_admin_id,
+      };
+    }
+
+    res.json(responseData);
   } catch (err) {
     console.error('Erro inesperado ao buscar usuário:', err);
     return sendError(res, 500, err.message);
