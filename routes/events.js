@@ -470,7 +470,7 @@ router.post('/dispatch', async (req, res) => {
 
             const { data: msg, error: fetchError } = await supabase
                 .from("messages")
-                .select("id")
+                .select("id, chat_id")
                 .eq("id", whatsappId)
                 .single();
 
@@ -493,7 +493,8 @@ router.post('/dispatch', async (req, res) => {
             console.log(`✅ Mensagem marcada como excluída no DB: ${msg.id}`);
 
             // 5. Retorna sempre o UUID do banco (não o id da Evolution)
-            enrichedEvent.deletedMessage = { id: msg.id };
+            enrichedEvent.deletedMessage = { id: msg.id, chat_id: msg.chat_id };
+         
         }
 
         if (eventClientsByUser[userId]) {
