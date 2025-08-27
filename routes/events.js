@@ -207,9 +207,7 @@ router.post('/dispatch', async (req, res) => {
     // Ignora mensagens editadas, de reação ou vazias
     if (
         data.message?.editedMessage ||
-        data.message?.reactionMessage ||
-        !data.message ||
-        (Object.keys(data.message).length === 0)
+        data.message?.reactionMessage
     ) {
         return res.status(200).send('Ignorada');
     }
@@ -279,6 +277,15 @@ router.post('/dispatch', async (req, res) => {
         }
 
         if (event === 'messages.upsert' || event === 'send.message') {
+
+            if (
+                !data.message ||
+                (Object.keys(data.message).length === 0)
+            ) {
+                return res.status(200).send('Ignorada');
+            }
+
+
             const rjid = extractRemoteJid(event, data);
             if (rjid && !/@g\.us$/.test(rjid)) markMessageActivity(connection, rjid);
 
