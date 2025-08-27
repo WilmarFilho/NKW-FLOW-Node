@@ -42,7 +42,7 @@ router.get('/', async (req, res) => {
     if (agente_id) query = query.eq('agente_id', agente_id);
 
     const { data: conexoes, error: conexoesError } = await query;
-    console.log(conexoes)
+ 
     if (conexoesError) throw conexoesError;
 
     if (!conexoes || conexoes.length === 0) return res.json([]);

@@ -255,9 +255,6 @@ router.delete('/:id', async (req, res) => {
 
     const instanceName = msgData.chats.connection_id;
     const remoteJid = msgData.chats.contato_numero + '@s.whatsapp.net';
-    console.log(remoteJid)
-
-    console.log(instanceName)
 
     // 2. Apagar no WhatsApp via Evolution
     try {

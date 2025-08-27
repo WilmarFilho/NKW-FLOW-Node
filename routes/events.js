@@ -116,6 +116,10 @@ async function processarMensagemComMedia(data, connectionId, remetente, tipoMedi
                 mensagem = data.message.imageMessage?.caption || '';
                 mimetype = 'image/png';
                 break;
+            case 'video':
+                mensagem = data.message.imageMessage?.caption || '';
+                mimetype = 'video/mp4';
+                break;
             case 'audio':
                 mimetype = data.message.audioMessage?.mimetype || mimeDefault;
                 break;
@@ -200,18 +204,17 @@ router.get('/:user_id', async (req, res) => {
 router.post('/dispatch', async (req, res) => {
     const { connection, event, data } = req.body;
 
-    // Ignora mensagens que não queremos processar
-    if (data.message?.editedMessage || data.message?.reactionMessage || data.message?.videoMessage ||
-        data.message?.locationMessage || data.message?.contactMessage || data.message?.pollCreationMessageV3 ||
-        data.message?.interactiveMessage || data.message?.eventMessage) {
-        console.log('👍 Ignorado evento de mensagem não suportado');
+    // Ignora mensagens editadas, de reação ou vazias
+    if (
+        data.message?.editedMessage ||
+        data.message?.reactionMessage ||
+        !data.message ||
+        (Object.keys(data.message).length === 0)
+    ) {
         return res.status(200).send('Ignorada');
     }
 
-    console.log(event)
-
     try {
-
         if (event === 'connection.update' && data.state === 'open' && data.wuid) {
             await supabase
                 .from('connections')
@@ -246,24 +249,11 @@ router.post('/dispatch', async (req, res) => {
         };
 
         if (event === 'chats.upsert') {
-
-            // Valida payload e remoteJid
             const rjid = extractRemoteJid(event, data);
-            if (!rjid) {
-                console.log("⚠️ Ignorado chats.upsert sem remoteJid válido");
-                return res.status(200).send("Ignorado chats.upsert sem remoteJid");
-            }
+            if (!rjid) return res.status(200).send("Ignorado chats.upsert sem remoteJid");
+            if (shouldIgnoreChatsUpsert(connection, rjid)) return res.status(200).send("Ignorado chats.upsert (debounce)");
 
-            // Debounce: se veio logo após messages.upsert / send.message do mesmo número+instância, ignora
-            if (shouldIgnoreChatsUpsert(connection, rjid)) {
-                console.log("🛑 Ignorado chats.upsert por debounce (mensagem recente) →", { connection, rjid });
-                return res.status(200).send("Ignorado chats.upsert (debounce)");
-            }
-
-            // --- A partir daqui é um chats.upsert "legítimo" ---
             const contato_numero = normalizeNumber(rjid);
-
-            // Busca o chat existente pelo numero e connection_id
             const { data: chatExistente, error: chatError } = await supabase
                 .from('chats')
                 .select('*')
@@ -271,18 +261,10 @@ router.post('/dispatch', async (req, res) => {
                 .eq('connection_id', connection)
                 .maybeSingle();
 
-            if (chatError) {
-                console.error("❌ Erro ao buscar chat para chats.upsert:", chatError.message);
-                return res.status(500).send("Erro ao buscar chat");
-            }
+            if (chatError) return res.status(500).send("Erro ao buscar chat");
+            if (!chatExistente) return res.status(200).send("Nenhum chat correspondente encontrado");
 
-            if (!chatExistente) {
-                console.warn("⚠️ Nenhum chat encontrado para chats.upsert", { connection, data });
-                return res.status(200).send("Nenhum chat correspondente encontrado");
-            }
-
-            // Atualiza tabela chats_read (marca como lido)
-            const { error: updateError } = await supabase
+            await supabase
                 .from('chats_reads')
                 .upsert(
                     {
@@ -293,22 +275,12 @@ router.post('/dispatch', async (req, res) => {
                     { onConflict: ['chat_id', 'connection_id'] }
                 );
 
-            if (updateError) {
-                console.error("❌ Erro ao atualizar chats_read:", updateError.message);
-                return res.status(500).send("Erro ao atualizar chats_read");
-            }
-
-            // Enriquecendo o evento para o front
             enrichedEvent.chat = chatExistente;
         }
 
         if (event === 'messages.upsert' || event === 'send.message') {
-
             const rjid = extractRemoteJid(event, data);
-
-            if (rjid && !/@g\.us$/.test(rjid)) {
-                markMessageActivity(connection, rjid);
-            }
+            if (rjid && !/@g\.us$/.test(rjid)) markMessageActivity(connection, rjid);
 
             const contatoNumero = rjid.replaceAll('@s.whatsapp.net', '');
             const connectionId = fullConnection.id;
@@ -316,17 +288,12 @@ router.post('/dispatch', async (req, res) => {
             let chatId = null;
             let chatCompleto = null;
 
-            // Busca chat existente
-            const { data: chatExistente, error: chatError } = await supabase
+            const { data: chatExistente } = await supabase
                 .from('chats')
                 .select('*')
                 .eq('contato_numero', contatoNumero)
                 .eq('connection_id', connectionId)
                 .maybeSingle();
-
-            if (chatError) {
-                console.error('Erro ao buscar chat existente:', chatError.message);
-            }
 
             if (chatExistente) {
                 if (chatExistente.contato_nome === chatExistente.contato_numero && !data.key.fromMe) {
@@ -335,7 +302,6 @@ router.post('/dispatch', async (req, res) => {
                         .update({ contato_nome: data.pushName })
                         .eq('id', chatExistente.id);
                 }
-                // Reabre chat e ativa IA se estiver fechado
                 if (chatExistente.status === 'Close') {
                     await supabase
                         .from('chats')
@@ -352,7 +318,7 @@ router.post('/dispatch', async (req, res) => {
                 const isContatoIniciou = !data.key.fromMe;
                 const nomeInicial = isContatoIniciou ? data.pushName : contatoNumero;
 
-                const { data: novoChat, error: insertChatError } = await supabase
+                const { data: novoChat } = await supabase
                     .from('chats')
                     .insert({
                         contato_nome: nomeInicial,
@@ -365,11 +331,6 @@ router.post('/dispatch', async (req, res) => {
                     .select()
                     .single();
 
-                if (insertChatError) {
-                    console.error('Erro ao criar novo chat:', insertChatError.message);
-                    return res.status(500).send('Erro ao criar chat');
-                }
-
                 chatId = novoChat.id;
                 chatCompleto = novoChat;
             }
@@ -381,53 +342,94 @@ router.post('/dispatch', async (req, res) => {
             let quoteMessage = null;
             let quoteId = null;
 
-            // Verifica se existe mensagem citada
             if (data.contextInfo?.stanzaId) {
                 const quotedStanzaId = data.contextInfo.stanzaId;
-
-                // Busca a mensagem citada completa no banco
-                const { data: msgCitada, error: quoteError } = await supabase
+                const { data: msgCitada } = await supabase
                     .from('messages')
-                    .select('id, mensagem, mimetype, remetente, base64') // 🔑 pega os campos que o front usa
+                    .select('id, mensagem, mimetype, remetente, base64')
                     .eq('id', quotedStanzaId)
                     .maybeSingle();
-
-                if (quoteError) {
-                    console.error('Erro ao buscar mensagem citada:', quoteError.message);
-                }
 
                 if (msgCitada) {
                     quoteId = msgCitada.id;
                     quoteMessage = msgCitada;
-                } else {
-                    console.warn('Mensagem citada não encontrada no banco:', quotedStanzaId);
                 }
             }
 
+            let novaMensagem = null;
 
-            let novaMensagem = {
-                id: data.key.id,
-                chat_id: chatId,
-                remetente,
-                mensagem: data.message?.conversation || null,
-                quote_id: quoteId,
+            // Mídias suportadas
+            if (data.message?.imageMessage) {
+                novaMensagem = await processarMensagemComMedia(data, connectionId, remetente, 'image', {
+                    id: data.key.id,
+                    quote_id: quoteId,
+                    chat_id: chatId
+                }, 'image/png');
+            } else if (data.message?.audioMessage) {
+                novaMensagem = await processarMensagemComMedia(data, connectionId, remetente, 'audio', {
+                    id: data.key.id,
+                    quote_id: quoteId,
+                    chat_id: chatId
+                }, 'audio/ogg');
+            } else if (data.message?.videoMessage) {
+                novaMensagem = await processarMensagemComMedia(data, connectionId, remetente, 'video', {
+                    id: data.key.id,
+                    quote_id: quoteId,
+                    chat_id: chatId
+                }, 'video/mp4');
+            } else if (data.message?.stickerMessage) {
+                novaMensagem = await processarMensagemComMedia(data, connectionId, remetente, 'sticker', {
+                    id: data.key.id,
+                    quote_id: quoteId,
+                    chat_id: chatId
+                }, 'image/webp');
+            } else if (data.message?.documentMessage) {
+                novaMensagem = await processarMensagemComMedia(data, connectionId, remetente, 'document', {
+                    id: data.key.id,
+                    quote_id: quoteId,
+                    chat_id: chatId
+                }, 'application/octet-stream');
+            }
+
+            // Tipos não suportados
+            const unsupportedTypes = {
+                eventMessage: { mensagem: '[Evento recebido]', mimetype: 'event/unsupported' },
+                ptvMessage: { mensagem: '[Recado de Video recebido]', mimetype: 'ptv/unsupported' },
+                pollCreationMessageV3: { mensagem: '[Enquete recebida]', mimetype: 'poll/unsupported' },
+                interactiveMessage: { mensagem: '[Chave Pix Recebida]', mimetype: 'pix/unsupported' },
+                locationMessage: { mensagem: '[Localização recebida]', mimetype: 'location/unsupported' },
+                contactMessage: { mensagem: '[Contato recebido]', mimetype: 'contact/unsupported' },
             };
 
-            // Tenta extrair mídia, se existir
-            if (data.message?.imageMessage) {
-                const mediaMsg = await processarMensagemComMedia(data, connectionId, remetente, 'image', novaMensagem, 'image/png');
-                if (mediaMsg) novaMensagem = mediaMsg;
-            } else if (data.message?.audioMessage) {
-                const mediaMsg = await processarMensagemComMedia(data, connectionId, remetente, 'audio', novaMensagem, 'audio/ogg');
-                if (mediaMsg) novaMensagem = mediaMsg;
-            } else if (data.message?.stickerMessage) {
-                console.log(JSON.stringify(data.message, null, 2))
-                const mediaMsg = await processarMensagemComMedia(data, connectionId, remetente, 'sticker', novaMensagem, 'image/webp');
-                if (mediaMsg) novaMensagem = mediaMsg;
-            } else if (data.message?.documentMessage) {
-                const mediaMsg = await processarMensagemComMedia(data, connectionId, remetente, 'document', novaMensagem, 'application/octet-stream');
-                if (mediaMsg) novaMensagem = mediaMsg;
+            if (!novaMensagem) {
+                // Se não for mídia, verifica tipos não suportados
+                for (const [key, value] of Object.entries(unsupportedTypes)) {
+                    if (data.message?.[key]) {
+                        novaMensagem = {
+                            id: data.key.id,
+                            chat_id: chatId,
+                            remetente,
+                            ...value,
+                        };
+                        break;
+                    }
+                }
             }
+
+            if (!novaMensagem) {
+                // Se não for mídia nem tipo não suportado, salva como texto/conversation
+                novaMensagem = {
+                    id: data.key.id,
+                    chat_id: chatId,
+                    remetente,
+                    mensagem: data.message?.conversation || null,
+                    quote_id: quoteId,
+                };
+            }
+
+            // console.log(`📨 Nova mensagem (${novaMensagem}) de ${remetente} no chat ${chatId}`); /**📨 Nova mensagem ([object Object]) de Usuário no chat 2fb6362f-0467-4c67-b377-6dfd5d3f0ebe
+            // ✅ Mídia salva com sucesso em: https://kocztxgaoqtieehbbcxf.supabase.co/storage/v1/object/public/bucket_arquivos_medias/media/332045865880149ABE386E3514FD4820.mp4
+            // 📨 Nova mensagem ([object Object]) de Usuário no chat 2fb6362f-0467-4c67-b377-6dfd5d3f0ebe */
 
             const { data: msgCriada, error: msgError } = await supabase
                 .from('messages')
@@ -436,10 +438,8 @@ router.post('/dispatch', async (req, res) => {
                 .single();
 
             if (msgError) {
-                console.error('Erro ao criar mensagem:', msgError.message);
                 return res.status(500).send('Erro ao salvar mensagem');
             }
-
 
             enrichedEvent.message = {
                 ...msgCriada,
@@ -447,61 +447,34 @@ router.post('/dispatch', async (req, res) => {
             };
 
             enrichedEvent.chat = chatCompleto || chatExistente;
-
         }
 
         if (event === 'messages.delete') {
             let whatsappId;
+            if (data?.remoteJid && data?.id) whatsappId = data.id;
+            if (data?.key?.id) whatsappId = data.key.id;
+            if (!whatsappId) return res.status(200).send("Ignorado, dados insuficientes.");
 
-            // 1. Se vier do WhatsApp (formato simples)
-            if (data?.remoteJid && data?.id) {
-                whatsappId = data.id;
-            }
-
-            // 2. Se vier da Evolution API (endpoint → payload detalhado)
-            if (data?.key?.id) {
-                whatsappId = data.key.id;
-            }
-
-            if (!whatsappId) {
-                console.warn("⚠️ Ignorado messages.delete: sem whatsappId válido", data);
-                return res.status(200).send("Ignorado, dados insuficientes.");
-            }
-
-            const { data: msg, error: fetchError } = await supabase
+            const { data: msg } = await supabase
                 .from("messages")
                 .select("id, chat_id")
                 .eq("id", whatsappId)
                 .single();
 
-            if (fetchError || !msg) {
-                console.warn(`⚠️ Mensagem não encontrada no banco com whatsapp_id=${whatsappId}`);
-                return res.status(200).send("Mensagem não encontrada.");
-            }
+            if (!msg) return res.status(200).send("Mensagem não encontrada.");
 
-            // 4. Atualiza a mensagem
-            const { error: updateError } = await supabase
+            await supabase
                 .from("messages")
                 .update({ excluded: true })
                 .eq("id", msg.id);
 
-            if (updateError) {
-                console.error(`❌ Erro ao marcar mensagem como excluída:`, updateError.message);
-                return res.status(500).send("Erro ao marcar mensagem como excluída.");
-            }
-
-            console.log(`✅ Mensagem marcada como excluída no DB: ${msg.id}`);
-
-            // 5. Retorna sempre o UUID do banco (não o id da Evolution)
             enrichedEvent.deletedMessage = { id: msg.id, chat_id: msg.chat_id };
-         
         }
 
         if (eventClientsByUser[userId]) {
             for (const client of eventClientsByUser[userId]) {
                 client.write(`data: ${JSON.stringify(enrichedEvent)}\n\n`);
             }
-            console.log(`📡 Evento enviado: ${event} → user_id=${userId}`);
         }
 
         if (event === 'connection.update' && data.state === 'close') {

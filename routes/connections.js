@@ -18,7 +18,23 @@ router.post('/', async (req, res) => {
   if (!user_id || !nome || !agente_id) {
     return sendError(res, 400, 'Todos os campos são obrigatórios.');
   }
+
   try {
+    // Verifica limite de conexões do usuário
+    const { count, error: countError } = await supabase
+      .from('connections')
+      .select('id', { count: 'exact', head: true })
+      .eq('user_id', user_id);
+
+    if (countError) {
+      console.error('Erro ao contar conexões:', countError);
+      return sendError(res, 500, 'Erro ao verificar limite de conexões.');
+    }
+
+    if (count >= 4) {
+      return sendError(res, 400, 'Limite de 4 conexões atingido para este usuário.');
+    }
+
     // 1. Salvar conexão no Supabase 
     const { data, error } = await supabase
       .from('connections')
@@ -26,7 +42,7 @@ router.post('/', async (req, res) => {
         user_id,
         nome,
         numero: null,
-        status: false,
+        status: null,
         agente_id
       }])
       .select();
@@ -63,7 +79,7 @@ router.post('/', async (req, res) => {
 
       // 3. Retornar o QR Code ao front
       res.status(201).json(qrcode.base64);
-    } catch (err) {
+    } catch (evolutionErr) {
       console.error('Erro ao criar instância no Evolution:', evolutionErr.response?.data || evolutionErr.message);
       return sendError(res, 500, 'Erro ao criar instância no Evolution.');
     }
@@ -76,7 +92,6 @@ router.post('/', async (req, res) => {
 // LISTAR CONEXÕES DO USUÁRIO 
 router.get('/', async (req, res) => {
   try {
-
     const { user_id } = req.query;
 
     // Verifica se o usuário é admin no banco
@@ -92,6 +107,40 @@ router.get('/', async (req, res) => {
 
     if (userData.tipo_de_usuario !== 'admin') {
       return res.status(403).json({ error: 'Acesso negado. Apenas administradores podem acessar conexões.' });
+    }
+
+    // Busca IDs das conexões com status null
+    const { data: nullConnections, error: fetchNullError } = await supabase
+      .from('connections')
+      .select('id')
+      .eq('user_id', user_id)
+      .is('status', null);
+
+    if (fetchNullError) {
+      console.error('Erro ao buscar conexões com status null:', fetchNullError);
+    } else if (nullConnections && nullConnections.length > 0) {
+      // Apaga da Evolution
+      for (const conn of nullConnections) {
+        try {
+          await axios.delete(`http://localhost:8081/instance/delete/${conn.id}`, {
+            headers: { apikey: process.env.EVOLUTION_API_KEY },
+          });
+        } catch (evoErr) {
+          console.error(`Erro ao deletar instância ${conn.id} na Evolution:`, evoErr.response?.data || evoErr.message);
+        }
+      }
+    }
+
+    // Apaga conexões do usuário com status null no banco
+    const { error: deleteError } = await supabase
+      .from('connections')
+      .delete()
+      .eq('user_id', user_id)
+      .is('status', null);
+
+    if (deleteError) {
+      console.error('Erro ao deletar conexões com status null:', deleteError);
+      // Não retorna erro, apenas loga
     }
 
     const { data, error } = await supabase
