@@ -296,6 +296,44 @@ router.post('/dispatch', async (req, res) => {
                 .maybeSingle();
 
             if (chatExistente) {
+                // --- NOVA REGRA: Desativa IA se for message.upsert enviado pelo usuário ---
+                if (
+                    event === 'messages.upsert' &&
+                    data.key.fromMe &&
+                    chatExistente.ia_ativa
+                ) {
+                    await supabase
+                        .from('chats')
+                        .update({ ia_ativa: false })
+                        .eq('id', chatExistente.id);
+                    chatExistente.ia_ativa = false;
+                }
+
+                // --- NOVA REGRA: Ativa IA se usuário enviar a palavra-chave ---
+                if (
+                    event === 'messages.upsert' &&
+                    data.key.fromMe &&
+                    !chatExistente.ia_ativa
+                ) {
+                    // Busca a trigger word do admin
+                    const { data: userData } = await supabase
+                        .from('users')
+                        .select('ai_trigger_word')
+                        .eq('id', fullConnection.user.id)
+                        .single();
+
+                    const triggerWord = userData?.ai_trigger_word?.trim()?.toLowerCase();
+                    const mensagem = data.message?.conversation?.trim()?.toLowerCase();
+
+                    if (triggerWord && mensagem === triggerWord) {
+                        await supabase
+                            .from('chats')
+                            .update({ ia_ativa: true })
+                            .eq('id', chatExistente.id);
+                        chatExistente.ia_ativa = true;
+                    }
+                }
+
                 if (chatExistente.contato_nome === chatExistente.contato_numero && !data.key.fromMe) {
                     await supabase
                         .from('chats')

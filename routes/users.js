@@ -141,10 +141,10 @@ router.put('/:id', async (req, res) => {
   try {
     const { id } = req.params;
     const {
-        foto_perfil, email, nome, numero, senha_hash, tipo_de_usuario, status,
+      foto_perfil, email, nome, numero, senha_hash, tipo_de_usuario, status,
       modo_tela, modo_side_bar, mostra_nome_mensagens, modo_notificacao_atendente,
       notificacao_para_entrar_conversa, notificacao_necessidade_de_entrar_conversa,
-      notificacao_novo_chat, cidade, endereco, ref_code, referrals_count, discount_percent
+      notificacao_novo_chat, cidade, endereco, ref_code, referrals_count, discount_percent, ai_trigger_word
     } = req.body;
 
     // Validação de número (somente dígitos, de 10 a 15 caracteres)
@@ -165,7 +165,7 @@ router.put('/:id', async (req, res) => {
         foto_perfil, email, nome, numero, senha_hash, tipo_de_usuario, status,
       modo_tela, modo_side_bar, mostra_nome_mensagens, modo_notificacao_atendente,
       notificacao_para_entrar_conversa, notificacao_necessidade_de_entrar_conversa,
-      notificacao_novo_chat, cidade, endereco, ref_code, referrals_count, discount_percent
+      notificacao_novo_chat, cidade, endereco, ref_code, referrals_count, discount_percent, ai_trigger_word
       })
       .eq('id', id)
       .select();
