@@ -182,13 +182,18 @@ router.put('/fetchImage/:chatId', async (req, res) => {
 
     if (error || !chat) return res.status(404).json({ error: 'Chat não encontrado' });
 
+    console.log(chat.connection_id)
+    console.log(chat.contato_numero)
+
     const fotoURL = await axios.post(
-      `http://localhost:8081/chat/fetchProfilePictureUrl/${chat.connection_id}`,
+      `http://localhost:8081/chat/fetchProfilePictureUrl/${chat.connection_id}`, //https://{server-url}/chat/fetchProfilePictureUrl/{instance}
       { number: chat.contato_numero },
       { headers: { apikey: process.env.EVOLUTION_API_KEY } }
     );
 
     const { profilePictureUrl } = fotoURL.data;
+
+    console.log(profilePictureUrl)
 
     const { data: updatedChat, error: updateError } = await supabase
       .from('chats')
