@@ -272,6 +272,7 @@ router.post('/dispatch', async (req, res) => {
                     },
                     { onConflict: ['chat_id', 'connection_id'] }
                 );
+            console.log(chatExistente)
 
             enrichedEvent.chat = chatExistente;
         }
@@ -295,12 +296,14 @@ router.post('/dispatch', async (req, res) => {
             let chatId = null;
             let chatCompleto = null;
 
-            const { data: chatExistente } = await supabase
+            const { data : chatExistenteArray } = await supabase
                 .from('chats')
                 .select('*')
                 .eq('contato_numero', contatoNumero)
                 .eq('connection_id', connectionId)
-                .maybeSingle();
+                .limit(1);
+
+            const chatExistente = chatExistenteArray[0]
 
             if (chatExistente) {
                 // --- NOVA REGRA: Desativa IA se for message.upsert enviado pelo usuário ---
@@ -363,9 +366,11 @@ router.post('/dispatch', async (req, res) => {
                 const isContatoIniciou = !data.key.fromMe;
                 const nomeInicial = isContatoIniciou ? data.pushName : contatoNumero;
 
+                console.log('aaaaaaaa')
+
                 const { data: novoChat } = await supabase
                     .from('chats')
-                    .insert({
+                    .upsert({
                         contato_nome: nomeInicial,
                         contato_numero: contatoNumero,
                         connection_id: connectionId,
