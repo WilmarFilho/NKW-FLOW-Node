@@ -154,19 +154,38 @@ router.get('/:id', async (req, res) => {
   const { id } = req.params;
 
   try {
-    const { data, error } = await supabase
+    const { data: chat, error } = await supabase
       .rpc('chat_por_id', { p_chat_id: id })
       .maybeSingle();
 
     if (error) throw error;
-    if (!data) return res.status(404).json({ error: 'Chat não encontrado' });
+    if (!chat) return res.status(404).json({ error: 'Chat não encontrado' });
 
-    res.json(data);
+    // 🔹 Enriquecer com dados do dono
+    let dono = null;
+    if (chat.user_id) {
+      const { data: userData, error: userError } = await supabase
+        .from('users')
+        .select('id, nome')
+        .eq('id', chat.user_id)
+        .maybeSingle();
+
+      if (userError) throw userError;
+      dono = userData;
+    }
+
+    const chatComDono = {
+      ...chat,
+      user_nome: dono ? dono.nome : null,
+    };
+
+    res.json(chatComDono);
   } catch (err) {
     console.error('Erro ao buscar chat:', err);
     res.status(500).json({ error: 'Erro interno' });
   }
 });
+
 
 // ATUALIZA FOTO DE PERFIL DO CHAT
 router.put('/fetchImage/:chatId', async (req, res) => {

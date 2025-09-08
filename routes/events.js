@@ -204,6 +204,9 @@ router.get('/:user_id', async (req, res) => {
 router.post('/dispatch', async (req, res) => {
     const { connection, event, data } = req.body;
 
+
+    console.log(event)
+
     // Ignora mensagens editadas, de reação ou vazias
     if (
         data.message?.editedMessage ||
@@ -247,6 +250,7 @@ router.post('/dispatch', async (req, res) => {
         };
 
         if (event === 'chats.upsert') {
+            console.log('Caiu no chat upsert')
             const rjid = extractRemoteJid(event, data);
             if (!rjid) return res.status(200).send("Ignorado chats.upsert sem remoteJid");
             if (shouldIgnoreChatsUpsert(connection, rjid)) return res.status(200).send("Ignorado chats.upsert (debounce)");
@@ -262,6 +266,8 @@ router.post('/dispatch', async (req, res) => {
             if (chatError) return res.status(500).send("Erro ao buscar chat");
             if (!chatExistente) return res.status(200).send("Nenhum chat correspondente encontrado");
 
+            console.log('achou o chat:', chatExistente)
+
             await supabase
                 .from('chats_reads')
                 .upsert(
@@ -272,9 +278,10 @@ router.post('/dispatch', async (req, res) => {
                     },
                     { onConflict: ['chat_id', 'connection_id'] }
                 );
-            console.log(chatExistente)
 
             enrichedEvent.chat = chatExistente;
+
+            console.log('Fim do if:', enrichedEvent)
         }
 
         if (event === 'messages.upsert' || event === 'send.message') {
@@ -365,8 +372,6 @@ router.post('/dispatch', async (req, res) => {
                 const { profilePictureUrl } = await buscarDadosContato(contatoNumero, connection);
                 const isContatoIniciou = !data.key.fromMe;
                 const nomeInicial = isContatoIniciou ? data.pushName : contatoNumero;
-
-                console.log('aaaaaaaa')
 
                 const { data: novoChat } = await supabase
                     .from('chats')
@@ -477,10 +482,6 @@ router.post('/dispatch', async (req, res) => {
                 };
             }
 
-            // console.log(`📨 Nova mensagem (${novaMensagem}) de ${remetente} no chat ${chatId}`); /**📨 Nova mensagem ([object Object]) de Usuário no chat 2fb6362f-0467-4c67-b377-6dfd5d3f0ebe
-            // ✅ Mídia salva com sucesso em: https://kocztxgaoqtieehbbcxf.supabase.co/storage/v1/object/public/bucket_arquivos_medias/media/332045865880149ABE386E3514FD4820.mp4
-            // 📨 Nova mensagem ([object Object]) de Usuário no chat 2fb6362f-0467-4c67-b377-6dfd5d3f0ebe */
-
             const { data: msgCriada, error: msgError } = await supabase
                 .from('messages')
                 .insert(novaMensagem)
@@ -522,6 +523,7 @@ router.post('/dispatch', async (req, res) => {
         }
 
         if (eventClientsByUser[userId]) {
+            console.log('Caiu no if de mandar evento:', enrichedEvent)
             for (const client of eventClientsByUser[userId]) {
                 client.write(`data: ${JSON.stringify(enrichedEvent)}\n\n`);
             }
