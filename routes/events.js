@@ -13,7 +13,7 @@ const BUCKET_NAME = "bucket_arquivos_medias";
 const MEDIA_FOLDER = "media";
 
 // --- Debounce de eventos para não "marcar como lido" por engano ---
-const DEBOUNCE_MS = 2000; // ajuste fino: 2~5s
+const DEBOUNCE_MS = 500; // ajuste fino: 2~5s
 const recentMsgActivity = new Map(); // key: `${connectionId}|${numero}` -> timestamp
 
 const normalizeNumber = (remoteJid = "") =>
