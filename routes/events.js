@@ -303,7 +303,7 @@ router.post('/dispatch', async (req, res) => {
             let chatId = null;
             let chatCompleto = null;
 
-            const { data : chatExistenteArray } = await supabase
+            const { data: chatExistenteArray } = await supabase
                 .from('chats')
                 .select('*')
                 .eq('contato_numero', contatoNumero)
@@ -373,7 +373,7 @@ router.post('/dispatch', async (req, res) => {
                 const isContatoIniciou = !data.key.fromMe;
                 const nomeInicial = isContatoIniciou ? data.pushName : contatoNumero;
 
-                const { data: novoChat } = await supabase
+                const { data: novoChat, error } = await supabase
                     .from('chats')
                     .upsert({
                         contato_nome: nomeInicial,
@@ -382,9 +382,14 @@ router.post('/dispatch', async (req, res) => {
                         ia_ativa: true,
                         status: 'Open',
                         foto_perfil: profilePictureUrl
-                    })
+                    }, { onConflict: ['connection_id', 'contato_numero'] })
                     .select()
                     .single();
+
+                if (error) {
+                    console.error('Erro no upsert do chat:', error);
+                }
+
 
                 chatId = novoChat.id;
                 chatCompleto = novoChat;
@@ -454,6 +459,7 @@ router.post('/dispatch', async (req, res) => {
                 interactiveMessage: { mensagem: '[Chave Pix Recebida]', mimetype: 'pix/unsupported' },
                 locationMessage: { mensagem: '[Localização recebida]', mimetype: 'location/unsupported' },
                 contactMessage: { mensagem: '[Contato recebido]', mimetype: 'contact/unsupported' },
+                adReplyMessage: { mensagem: '[Anúncio ignorado]', mimetype: 'ads/unsupported' }
             };
 
             if (!novaMensagem) {

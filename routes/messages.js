@@ -201,6 +201,8 @@ router.get('/chat/:chat_id', async (req, res) => {
 
     const { data, error } = await query;
 
+    console.log(data, '=====================')
+
     if (error) {
       console.error('Erro ao buscar mensagens:', error);
       return res.status(500).send('Erro ao buscar mensagens.');
@@ -284,5 +286,9 @@ router.delete('/:id', async (req, res) => {
 
 
 module.exports = router;
+
+
+
+
 
 
