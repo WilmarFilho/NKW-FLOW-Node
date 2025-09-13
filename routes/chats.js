@@ -120,44 +120,6 @@ router.post('/', async (req, res) => {
   }
 });
 
-// ATUALIZA UM CHAT
-router.put('/:id', async (req, res) => {
-  const { id } = req.params;
-  const { connection_id, contato_nome, contato_numero, ia_ativa, status, user_id } = req.body;
-
-  console.log(status)
-
-  try {
-    // Monta objeto de atualização
-    const updateFields = { connection_id, contato_nome, contato_numero, ia_ativa, status, user_id };
-
-    // 🔹 Se a IA for desativada, grava o timestamp atual
-    if (ia_ativa === false) {
-      updateFields.ia_desligada_em = new Date().toISOString();
-    }
-
-    const { data, error } = await supabase
-      .from('chats')
-      .update(updateFields)
-      .eq('id', id)
-      .select('*, connections(*)');
-
-    if (error) throw error;
-    if (!data || data.length === 0) return res.status(404).json({ error: 'Chat não encontrado' });
-
-    const updatedChat = data[0];
-    const connection = updatedChat.connections ?? null;
-
-    delete updatedChat.connections;
-    updatedChat.connection = connection;
-
-    res.json(updatedChat);
-  } catch (err) {
-    console.error('Erro ao atualizar chat:', err.message);
-    res.status(500).send(err.message);
-  }
-});
-
 // BUSCA CHAT POR ID
 router.get('/:id', async (req, res) => {
   const { id } = req.params;
