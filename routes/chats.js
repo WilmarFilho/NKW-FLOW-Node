@@ -22,8 +22,6 @@ router.get('/', async (req, res) => {
 
   if (!user_id) return res.status(400).json({ error: 'User ID é obrigatório.' });
 
-  console.log(req.query)
-
   try {
     // Descobre se é admin ou atendente
     const { data: attendant } = await supabase
@@ -42,8 +40,6 @@ router.get('/', async (req, res) => {
 
     const { data: conexoes } = await query;
     if (!conexoes || conexoes.length === 0) return res.json({ chats: [], nextCursor: null });
-
-    console.log(conexoes) // ta voltando todos ou ativada ou desativada tem que transformar em boolean
 
     // 2) Chama RPC passando todos os filtros
     const chamadas = conexoes.map(c =>

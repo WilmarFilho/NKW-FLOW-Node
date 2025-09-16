@@ -3,6 +3,7 @@ const axios = require("axios");
 const router = express.Router();
 const { createClient } = require('@supabase/supabase-js');
 require('dotenv').config();
+const jwt = require("jsonwebtoken");
 
 const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_KEY);
 
@@ -150,13 +151,26 @@ async function processarMensagemComMedia(data, connectionId, remetente, tipoMedi
 }
 
 router.get('/:user_id', async (req, res) => {
+
     const { user_id } = req.params;
+    const { token } = req.query;
+
+    if (!token) return res.status(401).json({ error: "Token ausente" });
+
+    try {
+        const decoded = jwt.decode(token);
+        if (!decoded || decoded.sub !== user_id) {
+            return res.status(403).json({ error: "Token não corresponde ao usuário" });
+        }
+    } catch (err) {
+        return res.status(401).json({ error: "Token inválido" });
+    }
 
     // Primeiro pega o tipo de usuário
     const { data: user, error: userError } = await supabase
         .from('users')
         .select('id, tipo_de_usuario')
-        .eq('id', user_id)
+        .eq('auth_id', user_id)
         .maybeSingle();
 
     if (userError || !user) {
@@ -204,8 +218,10 @@ router.get('/:user_id', async (req, res) => {
 router.post('/dispatch', async (req, res) => {
     const { connection, event, data } = req.body;
 
-
-    console.log(event)
+    const apiKey = req.headers["apikey"];
+    if (apiKey !== process.env.EVOLUTION_API_KEY) {
+        return res.status(403).send("Forbidden");
+    }
 
     // Ignora mensagens editadas, de reação ou vazias
     if (
@@ -250,7 +266,6 @@ router.post('/dispatch', async (req, res) => {
         };
 
         if (event === 'chats.upsert') {
-            console.log('Caiu no chat upsert')
             const rjid = extractRemoteJid(event, data);
             if (!rjid) return res.status(200).send("Ignorado chats.upsert sem remoteJid");
             if (shouldIgnoreChatsUpsert(connection, rjid)) return res.status(200).send("Ignorado chats.upsert (debounce)");
@@ -266,8 +281,6 @@ router.post('/dispatch', async (req, res) => {
             if (chatError) return res.status(500).send("Erro ao buscar chat");
             if (!chatExistente) return res.status(200).send("Nenhum chat correspondente encontrado");
 
-            console.log('achou o chat:', chatExistente)
-
             await supabase
                 .from('chats_reads')
                 .upsert(
@@ -281,7 +294,6 @@ router.post('/dispatch', async (req, res) => {
 
             enrichedEvent.chat = chatExistente;
 
-            console.log('Fim do if:', enrichedEvent)
         }
 
         if (event === 'messages.upsert' || event === 'send.message') {
@@ -529,7 +541,6 @@ router.post('/dispatch', async (req, res) => {
         }
 
         if (eventClientsByUser[userId]) {
-            console.log('Caiu no if de mandar evento:', enrichedEvent)
             for (const client of eventClientsByUser[userId]) {
                 client.write(`data: ${JSON.stringify(enrichedEvent)}\n\n`);
             }

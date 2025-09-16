@@ -36,16 +36,10 @@ router.get("/chats/fechados", async (req, res) => {
     const { period = "weekly", user_admin_id } = req.query;
     if (!user_admin_id) return res.status(401).json({ error: 'Não autorizado' });
 
-    console.log('oi')
-
-    console.log(req.query)
-
     const status_filter = 'Close'
 
     const { data: labels, error } = await supabase.rpc('get_chats_stats', { period, user_admin_id, status_filter});
     if (error) throw error;
-
-    console.log(labels)
 
     const total = labels.reduce((acc, d) => acc + d.chats, 0);
     const previous_total = 0;

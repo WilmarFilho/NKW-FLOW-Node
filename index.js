@@ -14,6 +14,7 @@ const uploadRoutes = require("./routes/upload");
 const create_usersRoutes = require("./routes/create_users");
 const { router: eventsRoutes } = require('./routes/events');
 const metricsRoutes = require('./routes/metrics');
+const loginRoutes = require('./routes/login');
 
 // Inicia Servidor Express
 const app = express();
@@ -37,6 +38,7 @@ app.use('/events',eventsRoutes);
 app.use('/upload', uploadRoutes);
 app.use('/createUser', create_usersRoutes);
 app.use('/metrics', metricsRoutes);
+app.use('/login', loginRoutes);
 
 //PORTA DO SERVER
 const PORT = 5679;
