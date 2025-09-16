@@ -2,46 +2,51 @@ const express = require('express');
 const axios = require('axios');
 const router = express.Router();
 const { createClient } = require('@supabase/supabase-js');
+const { authMiddleware } = require('../middleware/auth'); // import do middleware
 require('dotenv').config();
 
 const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_KEY);
 
-// LISTA CHATS COM PAGINAÇÃO E FILTROS
-router.get('/', async (req, res) => {
+// --- LISTA CHATS COM PAGINAÇÃO E FILTROS ---
+router.get('/', authMiddleware, async (req, res) => {
   const {
-    user_id,
     limit = 20,
     cursor,
-    status,                // Open / Close
-    owner,                 // all / mine
-    search,                // string de busca
-    iaStatus,              // todos / ativa / desativada
+    status,
+    owner,
+    search,
+    iaStatus,
     connectionId,
     attendantId,
   } = req.query;
 
+  const user_id = req.userId;   // sempre enviado do frontend
+  const auth_id = req.authId;                 // do token JWT
+
   if (!user_id) return res.status(400).json({ error: 'User ID é obrigatório.' });
 
+  let resolvedUserId = null;
+
   try {
-    // Descobre se é admin ou atendente
     const { data: attendant } = await supabase
       .from('attendants')
       .select('user_admin_id, connection_id')
-      .eq('user_id', user_id)
+      .eq('user_id', auth_id)
       .maybeSingle();
 
-    const isAttendant = Boolean(attendant?.user_admin_id);
-    const resolvedUserId = isAttendant ? attendant.user_admin_id : user_id;
+    resolvedUserId = attendant
+      ? (await supabase.from('users').select('id').eq('auth_id', attendant.user_admin_id).maybeSingle()).data.id
+      : user_id;
 
     // 1) Busca conexões
     let query = supabase.from('connections').select('id').eq('user_id', resolvedUserId);
-    if (isAttendant && attendant?.connection_id) query = query.eq('id', attendant.connection_id);
+    if (attendant?.connection_id) query = query.eq('id', attendant.connection_id);
     if (connectionId) query = query.eq('id', connectionId);
 
     const { data: conexoes } = await query;
     if (!conexoes || conexoes.length === 0) return res.json({ chats: [], nextCursor: null });
 
-    // 2) Chama RPC passando todos os filtros
+    // 2) Chama RPC
     const chamadas = conexoes.map(c =>
       c.id &&
       supabase.rpc('chats_com_ultima_mensagem', {
@@ -67,7 +72,7 @@ router.get('/', async (req, res) => {
       return acc;
     }, []);
 
-    // 4) Busca nomes dos donos
+    // 4) Enriquecer com nome do dono
     const donoIds = [...new Set(todosOsChats.map(c => c.user_id).filter(Boolean))];
     let donos = [];
     if (donoIds.length > 0) {
@@ -75,13 +80,11 @@ router.get('/', async (req, res) => {
       donos = data;
     }
 
-    // 5) Enriquecer chats com nome do dono
     const chatsComDono = todosOsChats.map(chat => {
       const dono = donos.find(d => d.id === chat.user_id);
       return { ...chat, user_nome: dono ? dono.nome : null };
     });
 
-    // 6) Next cursor
     let nextCursor = null;
     if (chatsComDono.length > 0) {
       const last = chatsComDono[chatsComDono.length - 1];
@@ -96,9 +99,8 @@ router.get('/', async (req, res) => {
   }
 });
 
-
-// CRIA UM CHAT
-router.post('/', async (req, res) => {
+// --- CRIA UM CHAT ---
+router.post('/', authMiddleware, async (req, res) => {
   const { connection_id, contato_nome, contato_numero, ia_ativa, status, user_id } = req.body;
 
   try {
@@ -116,8 +118,8 @@ router.post('/', async (req, res) => {
   }
 });
 
-// BUSCA CHAT POR ID
-router.get('/:id', async (req, res) => {
+// --- BUSCA CHAT POR ID ---
+router.get('/:id', authMiddleware, async (req, res) => {
   const { id } = req.params;
 
   try {
@@ -128,7 +130,6 @@ router.get('/:id', async (req, res) => {
     if (error) throw error;
     if (!chat) return res.status(404).json({ error: 'Chat não encontrado' });
 
-    // 🔹 Enriquecer com dados do dono
     let dono = null;
     if (chat.user_id) {
       const { data: userData, error: userError } = await supabase
@@ -141,20 +142,15 @@ router.get('/:id', async (req, res) => {
       dono = userData;
     }
 
-    const chatComDono = {
-      ...chat,
-      user_nome: dono ? dono.nome : null,
-    };
-
-    res.json(chatComDono);
+    res.json({ ...chat, user_nome: dono ? dono.nome : null });
   } catch (err) {
     console.error('Erro ao buscar chat:', err);
     res.status(500).json({ error: 'Erro interno' });
   }
 });
 
-// ATUALIZA FOTO DE PERFIL DO CHAT
-router.put('/fetchImage/:chatId', async (req, res) => {
+// --- ATUALIZA FOTO DE PERFIL DO CHAT ---
+router.put('/fetchImage/:chatId', authMiddleware, async (req, res) => {
   const { chatId } = req.params;
   if (!chatId) return res.status(400).json({ error: 'chatId é obrigatório' });
 
@@ -191,8 +187,8 @@ router.put('/fetchImage/:chatId', async (req, res) => {
   }
 });
 
-// DELETA O CHAT
-router.delete('/:id', async (req, res) => {
+// --- DELETA O CHAT ---
+router.delete('/:id', authMiddleware, async (req, res) => {
   const { id } = req.params;
   try {
     const { error } = await supabase.from('chats').delete().eq('id', id);
@@ -204,6 +200,31 @@ router.delete('/:id', async (req, res) => {
   }
 });
 
+// --- ATUALIZA O CHAT ---
+router.put('/:id', authMiddleware, async (req, res) => {
+  const { id } = req.params;
+  const { contato_nome, ia_ativa, status, user_id } = req.body;
+
+  try {
+    const { data, error } = await supabase
+      .from('chats')
+      .update({ contato_nome, ia_ativa, status, user_id })
+      .eq('id', id)
+      .select('*, connections(*)');
+
+    if (error) throw error;
+
+    const updatedChat = data[0];
+    const connection = updatedChat.connections ?? null;
+
+    delete updatedChat.connections;
+    updatedChat.connection = connection;
+
+    res.json(updatedChat);
+  } catch (err) {
+    console.error('Erro ao atualizar chat:', err.message);
+    res.status(500).send(err.message);
+  }
+});
+
 module.exports = router;
-
-

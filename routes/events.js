@@ -106,7 +106,6 @@ async function processarMensagemComMedia(data, connectionId, remetente, tipoMedi
             .getPublicUrl(fileName);
 
         const publicUrl = urlData.publicUrl;
-        console.log(`✅ Mídia salva com sucesso em: ${publicUrl}`);
 
         // ETAPA 6: Montar o objeto final da mensagem com a URL
         let mensagem = null;
@@ -169,7 +168,7 @@ router.get('/:user_id', async (req, res) => {
     // Primeiro pega o tipo de usuário
     const { data: user, error: userError } = await supabase
         .from('users')
-        .select('id, tipo_de_usuario')
+        .select('auth_id, tipo_de_usuario')
         .eq('auth_id', user_id)
         .maybeSingle();
 
@@ -177,14 +176,14 @@ router.get('/:user_id', async (req, res) => {
         return res.status(400).json({ error: 'Usuário não encontrado' });
     }
 
-    let resolvedUserId = user.id;
+    let resolvedUserId = user.auth_id;
 
     if (user.tipo_de_usuario !== 'admin') {
         // Se for atendente, resolve o admin
         const { data: attendant, error: attError } = await supabase
             .from('attendants')
             .select('user_admin_id')
-            .eq('user_id', user.id)
+            .eq('user_id', user.auth_id)
             .maybeSingle();
 
         if (attError || !attendant) {
@@ -192,9 +191,6 @@ router.get('/:user_id', async (req, res) => {
         }
 
         resolvedUserId = attendant.user_admin_id;
-        console.log(`👥 Atendente conectado → user_id=${user.id}, admin_id=${resolvedUserId}`);
-    } else {
-        console.log(`👤 Admin conectado → user_id=${user.id}`);
     }
 
     // Configura SSE
@@ -216,6 +212,7 @@ router.get('/:user_id', async (req, res) => {
 
 
 router.post('/dispatch', async (req, res) => {
+   
     const { connection, event, data } = req.body;
 
     const apiKey = req.headers["apikey"];
@@ -246,7 +243,7 @@ router.post('/dispatch', async (req, res) => {
             .from('connections')
             .select(`
                 *,
-                user:users(id, nome, email),
+                user:users(id, auth_id, nome, email),
                 agente:agents(id, tipo_de_agente, prompt_do_agente)
             `)
             .eq('id', connection)
@@ -257,6 +254,7 @@ router.post('/dispatch', async (req, res) => {
         }
 
         const userId = fullConnection.user?.id;
+        const authUserid = fullConnection.user?.auth_id;
         if (!userId) return res.status(400).send('Usuário da conexão não encontrado');
 
         const enrichedEvent = {
@@ -540,8 +538,8 @@ router.post('/dispatch', async (req, res) => {
             enrichedEvent.deletedMessage = { id: msg.id, chat_id: msg.chat_id };
         }
 
-        if (eventClientsByUser[userId]) {
-            for (const client of eventClientsByUser[userId]) {
+        if (eventClientsByUser[authUserid]) {
+            for (const client of eventClientsByUser[authUserid]) {
                 client.write(`data: ${JSON.stringify(enrichedEvent)}\n\n`);
             }
         }

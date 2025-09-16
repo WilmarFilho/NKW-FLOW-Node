@@ -2,6 +2,7 @@ require('dotenv').config();
 // Utilitarios
 const express = require('express');
 const cors = require('cors');
+
 // Import de Rotas
 const usersRoutes = require('./routes/users');
 const attendantsRoutes = require('./routes/attendants');
@@ -16,34 +17,37 @@ const { router: eventsRoutes } = require('./routes/events');
 const metricsRoutes = require('./routes/metrics');
 const loginRoutes = require('./routes/login');
 
+// Middleware de autenticação
+const { authMiddleware } = require('./middleware/auth');
+
 // Inicia Servidor Express
 const app = express();
 
-app.use(express.json({ limit: '15mb' }));
-app.use(express.urlencoded({ extended: true, limit: '15mb' }));
+app.use(express.json({ limit: '35mb' }));
+app.use(express.urlencoded({ extended: true, limit: '35mb' }));
 
 // Middlewares do Express
 app.use(cors());
 app.use(express.json());
 
-// Middleware das ROTAS REST
-app.use('/users', usersRoutes);
-app.use('/attendants', attendantsRoutes);
-app.use('/agents', agentsRoutes);
-app.use('/connections', connectionsRoutes);
-app.use('/chats', chatsRoutes);
-app.use('/messages',messagesRoutes);
-app.use('/chats_reads', chats_readsRoutes);
-app.use('/events',eventsRoutes);
-app.use('/upload', uploadRoutes);
-app.use('/createUser', create_usersRoutes);
-app.use('/metrics', metricsRoutes);
+// Rotas públicas
 app.use('/login', loginRoutes);
+app.use('/events', eventsRoutes);
 
-//PORTA DO SERVER
+// Rotas protegidas
+app.use('/users', authMiddleware, usersRoutes);
+app.use('/attendants', authMiddleware, attendantsRoutes);
+app.use('/agents', authMiddleware, agentsRoutes);
+app.use('/connections', authMiddleware, connectionsRoutes);
+app.use('/chats', authMiddleware, chatsRoutes);
+app.use('/messages', authMiddleware, messagesRoutes);
+app.use('/chats_reads', authMiddleware, chats_readsRoutes);
+app.use('/upload', authMiddleware, uploadRoutes);
+app.use('/createUser', authMiddleware, create_usersRoutes);
+app.use('/metrics', authMiddleware, metricsRoutes);
+
+// PORTA DO SERVER
 const PORT = 5679;
 
 // START
-app.listen(PORT, '0.0.0.0', () => {
-  console.log(`Servidor Node.js escutando em http://0.0.0.0:${PORT}`);
-});
+app.listen(PORT, '0.0.0.0', () => {});

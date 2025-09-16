@@ -2,6 +2,7 @@ const axios = require("axios");
 const express = require('express');
 const router = express.Router();
 const { createClient } = require('@supabase/supabase-js');
+const { authMiddleware } = require('../middleware/auth');
 require('dotenv').config();
 
 const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_KEY);
@@ -11,9 +12,10 @@ function sendError(res, status, message) {
   return res.status(status).json({ error: message });
 }
 
-// CRIA NOVA CONEXÃO
-router.post('/', async (req, res) => {
-  const { user_id, nome, agente_id } = req.body;
+// --- CRIA NOVA CONEXÃO ---
+router.post('/', authMiddleware, async (req, res) => {
+  const { nome, agente_id } = req.body;
+  const user_id = req.userId;
 
   if (!user_id || !nome || !agente_id) {
     return sendError(res, 400, 'Todos os campos são obrigatórios.');
@@ -26,41 +28,23 @@ router.post('/', async (req, res) => {
       .select('id', { count: 'exact', head: true })
       .eq('user_id', user_id);
 
-    if (countError) {
-      console.error('Erro ao contar conexões:', countError);
-      return sendError(res, 500, 'Erro ao verificar limite de conexões.');
-    }
+    if (countError) throw countError;
+    if (count >= 4) return sendError(res, 400, 'Limite de 4 conexões atingido.');
 
-    if (count >= 4) {
-      return sendError(res, 400, 'Limite de 4 conexões atingido para este usuário.');
-    }
-
-    // 1. Salvar conexão no Supabase 
+    // Salvar conexão no Supabase 
     const { data, error } = await supabase
       .from('connections')
-      .insert([{
-        user_id,
-        nome,
-        numero: null,
-        status: null,
-        agente_id
-      }])
+      .insert([{ user_id, nome, numero: null, status: null, agente_id }])
       .select();
 
-    if (error) {
-      console.error('Erro ao inserir conexão no Supabase:', error);
-      return sendError(res, 500, 'Erro ao salvar conexão no banco de dados.');
-    }
-
-    if (!data || data.length === 0) {
-      return sendError(res, 500, 'Falha ao salvar conexão, dados não retornados.');
-    }
+    if (error || !data || data.length === 0) throw error || new Error('Falha ao salvar conexão.');
 
     const instanceId = data[0].id;
 
-    try {
-      // 1. Criar instância no Evolution com o instanceName sendo o Id dela no supabase
-      const evolutionResponse = await axios.post('http://localhost:8081/instance/create', {
+    // Criar instância no Evolution
+    const evolutionResponse = await axios.post(
+      'http://localhost:8081/instance/create',
+      {
         instanceName: instanceId,
         qrcode: true,
         groupsIgnore: true,
@@ -69,164 +53,108 @@ router.post('/', async (req, res) => {
           url: 'http://host.docker.internal:5678/webhook/evolution',
           events: ['CONNECTION_UPDATE', 'MESSAGES_UPSERT', 'SEND_MESSAGE', 'CHATS_UPSERT', 'MESSAGES_DELETE'],
         },
-      }, {
-        headers: {
-          apikey: process.env.EVOLUTION_API_KEY
-        }
-      });
+      },
+      { headers: { apikey: process.env.EVOLUTION_API_KEY } }
+    );
 
-      const { instance, qrcode } = evolutionResponse.data;
-
-      // 3. Retornar o QR Code ao front
-      res.status(201).json(qrcode.base64);
-    } catch (evolutionErr) {
-      console.error('Erro ao criar instância no Evolution:', evolutionErr.response?.data || evolutionErr.message);
-      return sendError(res, 500, 'Erro ao criar instância no Evolution.');
-    }
-  } catch (supabaseErr) {
-    console.error('Erro geral ao salvar conexão:', supabaseErr);
-    return sendError(res, 500, 'Erro inesperado ao salvar conexão.');
+    res.status(201).json(evolutionResponse.data.qrcode.base64);
+  } catch (err) {
+    console.error('Erro ao criar conexão:', err.response?.data || err.message || err);
+    sendError(res, 500, 'Erro ao criar conexão.');
   }
 });
 
-// LISTAR CONEXÕES DO USUÁRIO 
-router.get('/', async (req, res) => {
-  try {
-    const { user_id } = req.query;
+// --- LISTAR CONEXÕES DO USUÁRIO ---
+router.get('/', authMiddleware, async (req, res) => {
+  const user_id = req.userId;
 
-    // Verifica se o usuário é admin no banco
+  try {
+    // Verifica se o usuário é admin
     const { data: userData, error: userError } = await supabase
       .from('users')
       .select('tipo_de_usuario')
       .eq('id', user_id)
       .single();
 
-    if (userError || !userData) {
-      return res.status(404).json({ error: 'Usuário não encontrado.' });
-    }
+    if (userError || !userData) return sendError(res, 404, 'Usuário não encontrado.');
+    if (userData.tipo_de_usuario !== 'admin') return sendError(res, 403, 'Acesso negado. Apenas admins.');
 
-    if (userData.tipo_de_usuario !== 'admin') {
-      return res.status(403).json({ error: 'Acesso negado. Apenas administradores podem acessar conexões.' });
-    }
-
-    // Busca IDs das conexões com status null
-    const { data: nullConnections, error: fetchNullError } = await supabase
+    // Limpeza de conexões com status null
+    const { data: nullConnections } = await supabase
       .from('connections')
       .select('id')
       .eq('user_id', user_id)
       .is('status', null);
 
-    if (fetchNullError) {
-      console.error('Erro ao buscar conexões com status null:', fetchNullError);
-    } else if (nullConnections && nullConnections.length > 0) {
-      // Apaga da Evolution
+    if (nullConnections?.length > 0) {
       for (const conn of nullConnections) {
         try {
-          await axios.delete(`http://localhost:8081/instance/delete/${conn.id}`, {
-            headers: { apikey: process.env.EVOLUTION_API_KEY },
-          });
+          await axios.delete(`http://localhost:8081/instance/delete/${conn.id}`, { headers: { apikey: process.env.EVOLUTION_API_KEY } });
         } catch (evoErr) {
           console.error(`Erro ao deletar instância ${conn.id} na Evolution:`, evoErr.response?.data || evoErr.message);
         }
       }
+
+      await supabase.from('connections').delete().eq('user_id', user_id).is('status', null);
     }
 
-    // Apaga conexões do usuário com status null no banco
-    const { error: deleteError } = await supabase
-      .from('connections')
-      .delete()
-      .eq('user_id', user_id)
-      .is('status', null);
-
-    if (deleteError) {
-      console.error('Erro ao deletar conexões com status null:', deleteError);
-      // Não retorna erro, apenas loga
-    }
-
+    // Busca conexões
     const { data, error } = await supabase
       .from('connections')
-      .select(`
-        *,
-        user:users(id, nome, email),
-        agente:agents(id, tipo_de_agente, prompt_do_agente)
-      `)
+      .select(`*, user:users(id, nome, email), agente:agents(id, tipo_de_agente, prompt_do_agente)`)
       .eq('user_id', user_id);
 
-    if (error) {
-      console.error('Erro ao buscar conexões:', error);
-      return res.status(500).json({ error: 'Erro ao buscar conexões.' });
-    }
-
-    return res.json(data);
+    if (error) throw error;
+    res.json(data);
   } catch (err) {
-    console.error('Erro inesperado ao listar conexões:', err);
-    return res.status(500).json({ error: 'Erro inesperado ao listar conexões.' });
+    console.error('Erro ao listar conexões:', err);
+    sendError(res, 500, 'Erro ao listar conexões.');
   }
 });
 
-// ATUALIZAR CONEXÃO
-router.put('/:id', async (req, res) => {
+// --- ATUALIZAR CONEXÃO ---
+router.put('/:id', authMiddleware, async (req, res) => {
   const { id } = req.params;
-  const { user_id, nome, numero, status, agente_id } = req.body;
+  const { nome, numero, status, agente_id } = req.body;
 
-  if (!id) {
-    return sendError(res, 400, 'ID da conexão é obrigatório.');
-  }
+  if (!id) return sendError(res, 400, 'ID da conexão é obrigatório.');
 
   try {
     const { data, error } = await supabase
       .from('connections')
-      .update({ user_id, nome, numero, status, agente_id })
+      .update({ nome, numero, status, agente_id })
       .eq('id', id)
       .select();
 
-    if (error) {
-      console.error('Erro ao atualizar conexão:', error);
-      return sendError(res, 500, 'Erro ao atualizar conexão.');
-    }
-
-    if (!data || data.length === 0) {
-      return sendError(res, 404, 'Conexão não encontrada.');
-    }
-
-    return res.json(data);
-
+    if (error) throw error;
+    if (!data || data.length === 0) return sendError(res, 404, 'Conexão não encontrada.');
+    res.json(data);
   } catch (err) {
-    console.error('Erro geral ao atualizar conexão:', err);
-    return sendError(res, 500, 'Erro inesperado ao atualizar conexão.');
+    console.error('Erro ao atualizar conexão:', err);
+    sendError(res, 500, 'Erro ao atualizar conexão.');
   }
 });
 
-// DELETAR CONEXÃO 
-router.delete('/:id', async (req, res) => {
+// --- DELETAR CONEXÃO ---
+router.delete('/:id', authMiddleware, async (req, res) => {
   const { id } = req.params;
-
-  if (!id) {
-    return sendError(res, 400, 'ID da conexão é obrigatório para deletar.');
-  }
+  if (!id) return sendError(res, 400, 'ID da conexão é obrigatório.');
 
   try {
     const { error } = await supabase.from('connections').delete().eq('id', id);
+    if (error) throw error;
 
-    if (error) {
-      console.error('Erro ao deletar conexão no banco:', error);
-      return sendError(res, 500, 'Erro ao deletar conexão no banco.');
-    }
-
+    // Remove do Evolution
     try {
-      await axios.delete(`http://localhost:8081/instance/delete/${id}`, {
-        headers: { apikey: process.env.EVOLUTION_API_KEY },
-      });
+      await axios.delete(`http://localhost:8081/instance/delete/${id}`, { headers: { apikey: process.env.EVOLUTION_API_KEY } });
     } catch (axiosErr) {
       console.error('Erro ao deletar instância no Evolution:', axiosErr.response?.data || axiosErr.message);
-      return sendError(res, 500, 'Erro ao deletar conexão no Evolution.');
     }
 
-    return res.status(200).json({ message: 'Conexão deletada com sucesso.' });
-
+    res.status(200).json({ message: 'Conexão deletada com sucesso.' });
   } catch (err) {
-    console.error('Erro geral ao deletar conexão:', err);
-    return sendError(res, 500, 'Erro inesperado ao deletar conexão.');
+    console.error('Erro ao deletar conexão:', err);
+    sendError(res, 500, 'Erro ao deletar conexão.');
   }
 });
 
