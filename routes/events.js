@@ -9,19 +9,15 @@ const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_KEY
 
 const eventClientsByUser = {};
 
-// --- Constantes para o Supabase Storage ---
 const BUCKET_NAME = "bucket_arquivos_medias";
 const MEDIA_FOLDER = "media";
 
-// --- Debounce de eventos para não "marcar como lido" por engano ---
-const DEBOUNCE_MS = 500; // ajuste fino: 2~5s
-const recentMsgActivity = new Map(); // key: `${connectionId}|${numero}` -> timestamp
+const DEBOUNCE_MS = 500;
+const recentMsgActivity = new Map();
 
-const normalizeNumber = (remoteJid = "") =>
-    remoteJid.replace(/@s\.whatsapp\.net$/, "").trim();
+const normalizeNumber = (remoteJid = "") => remoteJid.replace(/@s\.whatsapp\.net$/, "").trim();
 
-const makeKey = (connectionId, remoteJid) =>
-    `${connectionId}|${normalizeNumber(remoteJid)}`;
+const makeKey = (connectionId, remoteJid) => `${connectionId}|${normalizeNumber(remoteJid)}`;
 
 function markMessageActivity(connectionId, remoteJid) {
     if (!connectionId || !remoteJid) return;
@@ -210,65 +206,100 @@ router.get('/:user_id', async (req, res) => {
     });
 });
 
-
 router.post('/dispatch', async (req, res) => {
-   
+
     const { connection, event, data } = req.body;
 
-    const apiKey = req.headers["apikey"];
-    if (apiKey !== process.env.EVOLUTION_API_KEY) {
-        return res.status(403).send("Forbidden");
-    }
-
-    // Ignora mensagens editadas, de reação ou vazias
-    if (
-        data.message?.editedMessage ||
-        data.message?.reactionMessage
-    ) {
-        return res.status(200).send('Ignorada');
-    }
-
-    try {
-        if (event === 'connection.update' && data.state === 'open' && data.wuid) {
-            await supabase
-                .from('connections')
-                .update({
-                    numero: data.wuid.split('@')[0],
-                    status: true
-                })
-                .eq('id', connection);
-        }
-
-        const { data: fullConnection, error } = await supabase
-            .from('connections')
-            .select(`
+    const { data: fullConnection } = await supabase
+        .from('connections')
+        .select(`
                 *,
                 user:users(id, auth_id, nome, email),
                 agente:agents(id, tipo_de_agente, prompt_do_agente)
             `)
-            .eq('id', connection)
-            .single();
+        .eq('id', connection)
+        .single();
 
-        if (error || !fullConnection) {
-            return res.status(200).send('Conexão não encontrada');
+    const userId = fullConnection.user.id;
+
+    const authUserid = fullConnection.user.auth_id;
+
+    let enrichedEvent = {
+        event,
+        state: data.state,
+        connection: fullConnection
+    };
+
+    // Ignora mensagens editadas, de reação ou vazias
+
+    if (
+        data.message?.editedMessage ||
+        data.message?.reactionMessage ||
+        !data.message ||
+        (Object.keys(data.message).length === 0)
+    )
+
+        if (event === 'connection.update' && data.state === 'open' && data.wuid) {
+
+            const numero = data.wuid.split('@')[0];
+
+            const { data: currentConnection, error: connError } = await supabase
+                .from('connections')
+                .select('id, user_id')
+                .eq('id', connection)
+                .maybeSingle();
+
+            if (connError || !currentConnection) {
+                enrichedEvent.event = 'error';
+                enrichedEvent.message = 'Conexão não encontrada';
+            }
+
+            const { data: duplicate, error: dupError } = await supabase
+                .from('connections')
+                .select('id')
+                .eq('user_id', currentConnection.user_id)
+                .eq('numero', numero)
+                .neq('id', connection)
+                .maybeSingle();
+
+            if (dupError) {
+                enrichedEvent.error = true;
+                enrichedEvent.message = 'Erro ao verificar duplicidade';
+            }
+
+            if (duplicate) {
+                enrichedEvent.error = true;
+                enrichedEvent.message = 'Conexao duplicada';
+
+                await supabase.from('connections').delete().eq('id', connection);
+                await axios.delete(`http://localhost:8081/instance/delete/${connection}`, { headers: { apikey: process.env.EVOLUTION_API_KEY } });
+            }
+
+            const { data: updatedConnection, error } = await supabase
+                .from('connections')
+                .update({
+                    numero,
+                    status: true
+                })
+                .eq('id', connection)
+                .select('*')
+                .maybeSingle();
+
+            enrichedEvent.event = 'connection.update';
+            enrichedEvent.connection = updatedConnection;
+
         }
 
-        const userId = fullConnection.user?.id;
-        const authUserid = fullConnection.user?.auth_id;
-        if (!userId) return res.status(400).send('Usuário da conexão não encontrado');
+    if (event === 'chats.upsert') {
 
-        const enrichedEvent = {
-            event,
-            connection: fullConnection,
-            state: data.state,
-        };
+        const rjid = extractRemoteJid(event, data);
 
-        if (event === 'chats.upsert') {
-            const rjid = extractRemoteJid(event, data);
-            if (!rjid) return res.status(200).send("Ignorado chats.upsert sem remoteJid");
-            if (shouldIgnoreChatsUpsert(connection, rjid)) return res.status(200).send("Ignorado chats.upsert (debounce)");
-
+        if (shouldIgnoreChatsUpsert(connection, rjid) || !rjid) {
+            enrichedEvent.event = 'error';
+            enrichedEvent.message = 'Ignorado chats.upsert (debounce)';
+        } else {
             const contato_numero = normalizeNumber(rjid);
+
             const { data: chatExistente, error: chatError } = await supabase
                 .from('chats')
                 .select('*')
@@ -276,283 +307,286 @@ router.post('/dispatch', async (req, res) => {
                 .eq('connection_id', connection)
                 .maybeSingle();
 
-            if (chatError) return res.status(500).send("Erro ao buscar chat");
-            if (!chatExistente) return res.status(200).send("Nenhum chat correspondente encontrado");
+            if (chatExistente) {
+                await supabase
+                    .from('chats_reads')
+                    .upsert(
+                        {
+                            chat_id: chatExistente.id,
+                            connection_id: connection,
+                            last_read_at: new Date().toISOString(),
+                        },
+                        { onConflict: ['chat_id', 'connection_id'] }
+                    );
 
-            await supabase
-                .from('chats_reads')
-                .upsert(
-                    {
-                        chat_id: chatExistente.id,
-                        connection_id: connection,
-                        last_read_at: new Date().toISOString(),
-                    },
-                    { onConflict: ['chat_id', 'connection_id'] }
-                );
-
-            enrichedEvent.chat = chatExistente;
+                enrichedEvent.chat = chatExistente;
+            }
 
         }
+    }
 
-        if (event === 'messages.upsert' || event === 'send.message') {
+    if (event === 'messages.upsert' || event === 'send.message') {
 
+        const rjid = extractRemoteJid(event, data);
+        if (rjid && !/@g\.us$/.test(rjid)) markMessageActivity(connection, rjid);
+
+        const contatoNumero = rjid.replaceAll('@s.whatsapp.net', '');
+        const connectionId = fullConnection.id;
+
+        let chatId = null;
+        let chatCompleto = null;
+
+        const { data: chatExistenteArray, error: chatBuscaError } = await supabase
+            .from('chats')
+            .select('*')
+            .eq('contato_numero', contatoNumero)
+            .eq('connection_id', connectionId)
+            .limit(1);
+
+        const chatExistente = chatExistenteArray[0]
+
+        if (chatExistente) {
+            // --- NOVA REGRA: Desativa IA se for message.upsert enviado pelo usuário ---
             if (
-                !data.message ||
-                (Object.keys(data.message).length === 0)
+                event === 'messages.upsert' &&
+                data.key.fromMe &&
+                chatExistente.ia_ativa
             ) {
-                return res.status(200).send('Ignorada');
+                await supabase
+                    .from('chats')
+                    .update({ ia_ativa: false })
+                    .eq('id', chatExistente.id);
+                chatExistente.ia_ativa = false;
             }
 
-
-            const rjid = extractRemoteJid(event, data);
-            if (rjid && !/@g\.us$/.test(rjid)) markMessageActivity(connection, rjid);
-
-            const contatoNumero = rjid.replaceAll('@s.whatsapp.net', '');
-            const connectionId = fullConnection.id;
-
-            let chatId = null;
-            let chatCompleto = null;
-
-            const { data: chatExistenteArray } = await supabase
-                .from('chats')
-                .select('*')
-                .eq('contato_numero', contatoNumero)
-                .eq('connection_id', connectionId)
-                .limit(1);
-
-            const chatExistente = chatExistenteArray[0]
-
-            if (chatExistente) {
-                // --- NOVA REGRA: Desativa IA se for message.upsert enviado pelo usuário ---
-                if (
-                    event === 'messages.upsert' &&
-                    data.key.fromMe &&
-                    chatExistente.ia_ativa
-                ) {
-                    await supabase
-                        .from('chats')
-                        .update({ ia_ativa: false })
-                        .eq('id', chatExistente.id);
-                    chatExistente.ia_ativa = false;
-                }
-
-                // --- NOVA REGRA: Ativa IA se usuário enviar a palavra-chave ---
-                if (
-                    event === 'messages.upsert' &&
-                    data.key.fromMe &&
-                    !chatExistente.ia_ativa
-                ) {
-                    // Busca a trigger word do admin
-                    const { data: userData } = await supabase
-                        .from('users')
-                        .select('ai_trigger_word')
-                        .eq('id', fullConnection.user.id)
-                        .single();
-
-                    const triggerWord = userData?.ai_trigger_word?.trim()?.toLowerCase();
-                    const mensagem = data.message?.conversation?.trim()?.toLowerCase();
-
-                    if (triggerWord && mensagem === triggerWord) {
-                        await supabase
-                            .from('chats')
-                            .update({ ia_ativa: true })
-                            .eq('id', chatExistente.id);
-                        chatExistente.ia_ativa = true;
-                    }
-                }
-
-                if (chatExistente.contato_nome === chatExistente.contato_numero && !data.key.fromMe) {
-                    await supabase
-                        .from('chats')
-                        .update({ contato_nome: data.pushName })
-                        .eq('id', chatExistente.id);
-                }
-                if (chatExistente.status === 'Close') {
-                    await supabase
-                        .from('chats')
-                        .update({ status: 'Open', ia_ativa: true, user_id: null })
-                        .eq('id', chatExistente.id);
-
-                    chatExistente.status = 'Open';
-                    chatExistente.ia_ativa = true;
-                }
-                chatId = chatExistente.id;
-                chatCompleto = chatExistente;
-            } else {
-                const { profilePictureUrl } = await buscarDadosContato(contatoNumero, connection);
-                const isContatoIniciou = !data.key.fromMe;
-                const nomeInicial = isContatoIniciou ? data.pushName : contatoNumero;
-
-                const { data: novoChat, error } = await supabase
-                    .from('chats')
-                    .upsert({
-                        contato_nome: nomeInicial,
-                        contato_numero: contatoNumero,
-                        connection_id: connectionId,
-                        ia_ativa: true,
-                        status: 'Open',
-                        foto_perfil: profilePictureUrl
-                    }, { onConflict: ['connection_id', 'contato_numero'] })
-                    .select()
+            // --- NOVA REGRA: Ativa IA se usuário enviar a palavra-chave ---
+            if (
+                event === 'messages.upsert' &&
+                data.key.fromMe &&
+                !chatExistente.ia_ativa
+            ) {
+                // Busca a trigger word do admin
+                const { data: userData } = await supabase
+                    .from('users')
+                    .select('ai_trigger_word')
+                    .eq('id', fullConnection.user.id)
                     .single();
 
-                if (error) {
-                    console.error('Erro no upsert do chat:', error);
-                }
+                const triggerWord = userData?.ai_trigger_word?.trim()?.toLowerCase();
+                const mensagem = data.message?.conversation?.trim()?.toLowerCase();
 
-
-                chatId = novoChat.id;
-                chatCompleto = novoChat;
-            }
-
-            let remetente = (event === 'messages.upsert')
-                ? (data.key.fromMe ? 'Usuário' : 'Contato')
-                : 'Usuário';
-
-            let quoteMessage = null;
-            let quoteId = null;
-
-            if (data.contextInfo?.stanzaId) {
-                const quotedStanzaId = data.contextInfo.stanzaId;
-                const { data: msgCitada } = await supabase
-                    .from('messages')
-                    .select('id, mensagem, mimetype, remetente, base64')
-                    .eq('id', quotedStanzaId)
-                    .maybeSingle();
-
-                if (msgCitada) {
-                    quoteId = msgCitada.id;
-                    quoteMessage = msgCitada;
+                if (triggerWord && mensagem === triggerWord) {
+                    await supabase
+                        .from('chats')
+                        .update({ ia_ativa: true })
+                        .eq('id', chatExistente.id);
+                    chatExistente.ia_ativa = true;
                 }
             }
 
-            let novaMensagem = null;
-
-            // Mídias suportadas
-            if (data.message?.imageMessage) {
-                novaMensagem = await processarMensagemComMedia(data, connectionId, remetente, 'image', {
-                    id: data.key.id,
-                    quote_id: quoteId,
-                    chat_id: chatId
-                }, 'image/png');
-            } else if (data.message?.audioMessage) {
-                novaMensagem = await processarMensagemComMedia(data, connectionId, remetente, 'audio', {
-                    id: data.key.id,
-                    quote_id: quoteId,
-                    chat_id: chatId
-                }, 'audio/ogg');
-            } else if (data.message?.videoMessage) {
-                novaMensagem = await processarMensagemComMedia(data, connectionId, remetente, 'video', {
-                    id: data.key.id,
-                    quote_id: quoteId,
-                    chat_id: chatId
-                }, 'video/mp4');
-            } else if (data.message?.stickerMessage) {
-                novaMensagem = await processarMensagemComMedia(data, connectionId, remetente, 'sticker', {
-                    id: data.key.id,
-                    quote_id: quoteId,
-                    chat_id: chatId
-                }, 'image/webp');
-            } else if (data.message?.documentMessage) {
-                novaMensagem = await processarMensagemComMedia(data, connectionId, remetente, 'document', {
-                    id: data.key.id,
-                    quote_id: quoteId,
-                    chat_id: chatId
-                }, 'application/octet-stream');
+            if (chatExistente.contato_nome === chatExistente.contato_numero && !data.key.fromMe) {
+                await supabase
+                    .from('chats')
+                    .update({ contato_nome: data.pushName })
+                    .eq('id', chatExistente.id);
             }
+            if (chatExistente.status === 'Close') {
+                await supabase
+                    .from('chats')
+                    .update({ status: 'Open', ia_ativa: true, user_id: null })
+                    .eq('id', chatExistente.id);
 
-            // Tipos não suportados
-            const unsupportedTypes = {
-                eventMessage: { mensagem: '[Evento recebido]', mimetype: 'event/unsupported' },
-                ptvMessage: { mensagem: '[Recado de Video recebido]', mimetype: 'ptv/unsupported' },
-                pollCreationMessageV3: { mensagem: '[Enquete recebida]', mimetype: 'poll/unsupported' },
-                interactiveMessage: { mensagem: '[Chave Pix Recebida]', mimetype: 'pix/unsupported' },
-                locationMessage: { mensagem: '[Localização recebida]', mimetype: 'location/unsupported' },
-                contactMessage: { mensagem: '[Contato recebido]', mimetype: 'contact/unsupported' },
-                adReplyMessage: { mensagem: '[Anúncio ignorado]', mimetype: 'ads/unsupported' }
-            };
-
-            if (!novaMensagem) {
-                // Se não for mídia, verifica tipos não suportados
-                for (const [key, value] of Object.entries(unsupportedTypes)) {
-                    if (data.message?.[key]) {
-                        novaMensagem = {
-                            id: data.key.id,
-                            chat_id: chatId,
-                            remetente,
-                            ...value,
-                        };
-                        break;
-                    }
-                }
+                chatExistente.status = 'Open';
+                chatExistente.ia_ativa = true;
             }
+            chatId = chatExistente.id;
+            chatCompleto = chatExistente;
+        } else {
+            const { profilePictureUrl } = await buscarDadosContato(contatoNumero, connection);
+            const isContatoIniciou = !data.key.fromMe;
+            const nomeInicial = isContatoIniciou ? data.pushName : contatoNumero;
 
-            if (!novaMensagem) {
-                // Se não for mídia nem tipo não suportado, salva como texto/conversation
-                novaMensagem = {
-                    id: data.key.id,
-                    chat_id: chatId,
-                    remetente,
-                    mensagem: data.message?.conversation || null,
-                    quote_id: quoteId,
-                };
-            }
-
-            const { data: msgCriada, error: msgError } = await supabase
-                .from('messages')
-                .insert(novaMensagem)
+            const { data: novoChat, error: novoChatError } = await supabase
+                .from('chats')
+                .upsert({
+                    contato_nome: nomeInicial,
+                    contato_numero: contatoNumero,
+                    connection_id: connectionId,
+                    ia_ativa: true,
+                    status: 'Open',
+                    foto_perfil: profilePictureUrl
+                }, { onConflict: ['connection_id', 'contato_numero'] })
                 .select()
                 .single();
 
-            if (msgError) {
-                return res.status(500).send('Erro ao salvar mensagem');
-            }
+            chatId = novoChat.id;
+            chatCompleto = novoChat;
+        }
 
-            enrichedEvent.message = {
-                ...msgCriada,
-                quote_message: quoteMessage || null,
+        let remetente = (event === 'messages.upsert')
+            ? (data.key.fromMe ? 'Usuário' : 'Contato')
+            : 'Usuário';
+
+        let quoteMessage = null;
+        let quoteId = null;
+
+        if (data.contextInfo?.stanzaId) {
+            const quotedStanzaId = data.contextInfo.stanzaId;
+            const { data: msgCitada } = await supabase
+                .from('messages')
+                .select('id, mensagem, mimetype, remetente, base64')
+                .eq('id', quotedStanzaId)
+                .maybeSingle();
+
+            if (msgCitada) {
+                quoteId = msgCitada.id;
+                quoteMessage = msgCitada;
+            }
+        }
+
+        let novaMensagem = null;
+
+        // Mídias suportadas
+        if (data.message?.imageMessage) {
+            novaMensagem = await processarMensagemComMedia(data, connectionId, remetente, 'image', {
+                id: data.key.id,
+                quote_id: quoteId,
+                chat_id: chatId
+            }, 'image/png');
+        } else if (data.message?.audioMessage) {
+            novaMensagem = await processarMensagemComMedia(data, connectionId, remetente, 'audio', {
+                id: data.key.id,
+                quote_id: quoteId,
+                chat_id: chatId
+            }, 'audio/ogg');
+        } else if (data.message?.videoMessage) {
+            novaMensagem = await processarMensagemComMedia(data, connectionId, remetente, 'video', {
+                id: data.key.id,
+                quote_id: quoteId,
+                chat_id: chatId
+            }, 'video/mp4');
+        } else if (data.message?.stickerMessage) {
+            novaMensagem = await processarMensagemComMedia(data, connectionId, remetente, 'sticker', {
+                id: data.key.id,
+                quote_id: quoteId,
+                chat_id: chatId
+            }, 'image/webp');
+        } else if (data.message?.documentMessage) {
+            novaMensagem = await processarMensagemComMedia(data, connectionId, remetente, 'document', {
+                id: data.key.id,
+                quote_id: quoteId,
+                chat_id: chatId
+            }, 'application/octet-stream');
+        }
+
+        // Tipos não suportados
+        const unsupportedTypes = {
+            eventMessage: { mensagem: '[Evento recebido]', mimetype: 'event/unsupported' },
+            ptvMessage: { mensagem: '[Recado de Video recebido]', mimetype: 'ptv/unsupported' },
+            pollCreationMessageV3: { mensagem: '[Enquete recebida]', mimetype: 'poll/unsupported' },
+            interactiveMessage: { mensagem: '[Chave Pix Recebida]', mimetype: 'pix/unsupported' },
+            locationMessage: { mensagem: '[Localização recebida]', mimetype: 'location/unsupported' },
+            contactMessage: { mensagem: '[Contato recebido]', mimetype: 'contact/unsupported' },
+            adReplyMessage: { mensagem: '[Anúncio ignorado]', mimetype: 'ads/unsupported' }
+        };
+
+        if (!novaMensagem) {
+            // Se não for mídia, verifica tipos não suportados
+            for (const [key, value] of Object.entries(unsupportedTypes)) {
+                if (data.message?.[key]) {
+                    novaMensagem = {
+                        id: data.key.id,
+                        chat_id: chatId,
+                        remetente,
+                        ...value,
+                    };
+                    break;
+                }
+            }
+        }
+
+        if (!novaMensagem) {
+            // Se não for mídia nem tipo não suportado, salva como texto/conversation
+            novaMensagem = {
+                id: data.key.id,
+                chat_id: chatId,
+                remetente,
+                mensagem: data.message?.conversation || null,
+                quote_id: quoteId,
             };
-
-            enrichedEvent.chat = chatCompleto || chatExistente;
         }
 
-        if (event === 'messages.delete') {
-            let whatsappId;
-            if (data?.remoteJid && data?.id) whatsappId = data.id;
-            if (data?.key?.id) whatsappId = data.key.id;
-            if (!whatsappId) return res.status(200).send("Ignorado, dados insuficientes.");
+        const { data: msgCriada, error: msgError } = await supabase
+            .from('messages')
+            .insert(novaMensagem)
+            .select()
+            .single();
 
-            const { data: msg } = await supabase
-                .from("messages")
-                .select("id, chat_id")
-                .eq("id", whatsappId)
-                .single();
+        enrichedEvent.message = {
+            ...msgCriada,
+            quote_message: quoteMessage || null,
+        };
 
-            if (!msg) return res.status(200).send("Mensagem não encontrada.");
+        enrichedEvent.chat = chatCompleto || chatExistente;
+    }
 
-            await supabase
-                .from("messages")
-                .update({ excluded: true })
-                .eq("id", msg.id);
+    if (event === 'messages.delete') {
+        let whatsappId;
+        if (data?.remoteJid && data?.id) whatsappId = data.id;
+        if (data?.key?.id) whatsappId = data.key.id;
 
-            enrichedEvent.deletedMessage = { id: msg.id, chat_id: msg.chat_id };
+        if (!whatsappId) {
+            enrichedEvent.event = 'error';
+            enrichedEvent.message = 'invalid_payload, dados insuficientes';
         }
 
-        if (eventClientsByUser[authUserid]) {
-            for (const client of eventClientsByUser[authUserid]) {
-                client.write(`data: ${JSON.stringify(enrichedEvent)}\n\n`);
+        const { data: msg } = await supabase
+            .from("messages")
+            .select("id, chat_id")
+            .eq("id", whatsappId)
+            .single();
+
+        await supabase
+            .from("messages")
+            .update({ excluded: true })
+            .eq("id", msg.id);
+
+        enrichedEvent.deletedMessage = { id: msg.id, chat_id: msg.chat_id };
+
+    }
+
+    if (eventClientsByUser[authUserid]) {
+        for (const client of eventClientsByUser[authUserid]) {
+            client.write(`data: ${JSON.stringify(enrichedEvent)}\n\n`);
+        }
+    }
+
+    if (event === 'connection.update' && data.state === 'close') {
+        
+        const { data: attendantsData } = await supabase
+            .from('attendants')
+            .select('user_id')
+            .eq('connection_id', connection);
+
+        const authIds = attendantsData?.map(a => a.user_id) || [];
+
+        await supabase
+            .from('connections')
+            .delete()
+            .eq('id', connection);
+
+    
+        for (const authId of authIds) {
+            try {
+                await supabase.auth.admin.deleteUser(authId);
+            } catch (err) {
+                console.error(`Erro ao deletar auth.user ${authId}:`, err.message || err);
             }
         }
-
-        if (event === 'connection.update' && data.state === 'close') {
-            await supabase.from('connections').delete().eq('id', connection);
-        }
-
-        return res.status(200).send('ok, enviado');
-    } catch (err) {
-        console.error('Erro no /dispatch:', err.message);
-        return res.status(500).send('Erro interno');
     }
+
+    return res.status(enrichedEvent.error ? 400 : 200).json(enrichedEvent);
+
 });
 
 module.exports = {

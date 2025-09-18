@@ -5,15 +5,25 @@ const { createClient } = require('@supabase/supabase-js');
 require('dotenv').config();
 
 const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_KEY);
-
+const { authMiddleware } = require('../middleware/auth'); // middleware de autenticação
 const { eventClientsByUser } = require('./events.js');
 
-// Rota para criar mensagem e enviar para a Evolution API
-router.post('/', async (req, res) => {
+const EVOLUTION_API_URL = process.env.EVOLUTION_API_URL || 'http://localhost:8081';
 
-  const { user_id, chat_id, mensagem, mimetype, base64, connection_id, number, remetente, quote_id, file_name } = req.body;
+// --- CRIAR MENSAGEM E ENVIAR PARA EVOLUTION ---
+router.post('/', authMiddleware, async (req, res) => {
+  const {
+    chat_id,
+    mensagem,
+    mimetype,
+    base64,
+    connection_id,
+    number,
+    quote_id
+  } = req.body;
 
-  // Validação básica
+  const user_id = req.userId; // pega do token autenticado
+
   if (!mensagem && !base64) {
     return res.status(400).send('Mensagem ou mídia (base64) é obrigatória.');
   }
@@ -22,157 +32,118 @@ router.post('/', async (req, res) => {
     return res.status(400).send('Para enviar mídia, o mimetype é obrigatório.');
   }
 
-  if (chat_id) {
-    try {
-      // 1. BUSCAR DADOS ESSENCIAIS (Chat, Conexão, Usuário)
+  try {
+
+    // --- VERIFICAR SE USUÁRIO É ATENDENTE E SE ESTÁ ATIVO ---
+    const { data: userData, error: attendantError } = await supabase
+      .from('users')
+      .select('status')
+      .eq('id', user_id)
+      .single();
+
+      console.log(userData);
+
+    if (!userData.status) {
+      return res.status(403).send('Atendente inativo não pode enviar mensagens.');
+    }
+
+    let instanceName;
+    let chatNumber;
+    let remetenteNome = '';
+
+    if (chat_id) {
+      // BUSCAR CHAT
       const { data: chatData, error: chatError } = await supabase
         .from('chats')
         .select('id, contato_nome, contato_numero, connection_id')
         .eq('id', chat_id)
         .single();
 
-      if (chatError) {
-        console.error('Erro ao buscar chat:', chatError);
-        return res.status(404).send('Chat não encontrado');
-      }
+      if (chatError || !chatData) return res.status(404).send('Chat não encontrado');
 
-      const instanceName = chatData.connection_id;
-      const chatNumber = chatData.contato_numero;
+      instanceName = chatData.connection_id;
+      chatNumber = chatData.contato_numero;
 
+      // BUSCAR USUÁRIO
       const { data: userData, error: userError } = await supabase
         .from('users')
         .select('nome, mostra_nome_mensagens')
         .eq('id', user_id)
         .single();
 
-      if (userError) {
-        console.error('Erro ao buscar usuário:', userError);
-        return res.status(404).send('Usuário não encontrado');
-      }
+      if (userError || !userData) return res.status(404).send('Usuário não encontrado');
 
-      const remetenteNome = (userData.mostra_nome_mensagens && userData.nome)
+      remetenteNome = (userData.mostra_nome_mensagens && userData.nome)
         ? `*${userData.nome.trim()}*\n\n`
         : '';
+    } else {
+      instanceName = connection_id;
+      chatNumber = number;
+    }
 
-      // --- LÓGICA DE ENVIO ---
+    // --- LÓGICA DE ENVIO ---
+    let endpoint;
+    let payload;
 
-      if (base64 && mimetype) {
-        let endpoint = `http://localhost:8081/message/sendMedia/${instanceName}`;
-        let payload;
+    if (base64 && mimetype) {
+      endpoint = `${EVOLUTION_API_URL}/message/sendMedia/${instanceName}`;
 
-        if (mimetype.startsWith('image/')) {
-          payload = {
-            number: chatNumber,
-            mediatype: 'image',
-            mimetype: mimetype,
-            caption: '',
-            media: base64,
-            fileName: mensagem || 'image.png',
-            ...(quote_id && {
-              quoted: {
-                key: {
-                  id: quote_id
-                },
-
-              }
-            })
-          };
-        } else if (mimetype.startsWith('audio/')) {
-          endpoint = `http://localhost:8081/message/SendWhatsAppAudio/${instanceName}`;
-          payload = {
-            number: chatNumber,
-            audio: base64,
-            ...(quote_id && {
-              quoted: {
-                key: {
-                  id: quote_id
-                },
-
-              }
-            })
-          };
-        } else {
-          const extensao = mimetype.split('/')[1] || 'dat';
-          payload = {
-            number: chatNumber,
-            mediatype: 'document',
-            mimetype: mimetype,
-            caption: remetenteNome.trim(),
-            media: base64,
-            fileName: mensagem || `documento.${extensao}`,
-            ...(quote_id && {
-              quoted: {
-                key: {
-                  id: quote_id
-                },
-
-              }
-            })
-          };
-        }
-
-        // Envia para a Evolution API
-        await axios.post(endpoint, payload, {
-          headers: { apikey: process.env.EVOLUTION_API_KEY },
-        });
-
-        res.status(201).json(mensagem || '[Mídia enviada]');
-
-      } else if (mensagem) {
-
-        // Mensagem de texto simples
-        const endpoint = `http://localhost:8081/message/sendText/${instanceName}`;
-        const textoFormatado = `${remetenteNome}${mensagem}`;
-
-        const payload = {
+      if (mimetype.startsWith('image/')) {
+        payload = {
           number: chatNumber,
-          text: textoFormatado,
-          ...(quote_id && {
-            quoted: {
-              key: {
-                id: quote_id
-              },
-
-            }
-          })
+          mediatype: 'image',
+          mimetype,
+          caption: '',
+          media: base64,
+          fileName: mensagem || 'image.png',
+          ...(quote_id && { quoted: { key: { id: quote_id } } })
         };
-
-        await axios.post(endpoint, payload, {
-          headers: { apikey: process.env.EVOLUTION_API_KEY },
-        });
-
-        res.status(201).json(mensagem);
+      } else if (mimetype.startsWith('audio/')) {
+        endpoint = `${EVOLUTION_API_URL}/message/SendWhatsAppAudio/${instanceName}`;
+        payload = {
+          number: chatNumber,
+          audio: base64,
+          ...(quote_id && { quoted: { key: { id: quote_id } } })
+        };
       } else {
-        return res.status(400).send('Corpo da requisição inválido. Mensagem ou mídia necessária.');
+        const extensao = mimetype.split('/')[1] || 'dat';
+        payload = {
+          number: chatNumber,
+          mediatype: 'document',
+          mimetype,
+          caption: remetenteNome.trim(),
+          media: base64,
+          fileName: mensagem || `documento.${extensao}`,
+          ...(quote_id && { quoted: { key: { id: quote_id } } })
+        };
       }
 
-    } catch (err) {
-      console.error('Erro no processo de envio:', err.response?.data?.response?.message || err.message);
-      res.status(500).send(`Erro ao enviar mensagem: ${err.message}`);
+      await axios.post(endpoint, payload, { headers: { apikey: process.env.EVOLUTION_API_KEY } });
+      return res.status(201).json(mensagem || '[Mídia enviada]');
     }
-  } else {
-    try {
 
-      // Envia para a Evolution API
-      await axios.post(`http://localhost:8081/message/sendText/${connection_id}`, {
-        number: number,
-        text: mensagem,
-      }, {
-        headers: { apikey: process.env.EVOLUTION_API_KEY },
-      });
+    if (mensagem) {
+      endpoint = `${EVOLUTION_API_URL}/message/sendText/${instanceName}`;
+      payload = {
+        number: chatNumber,
+        text: `${remetenteNome}${mensagem}`,
+        ...(quote_id && { quoted: { key: { id: quote_id } } })
+      };
 
-      res.status(201).json(mensagem);
-
-    } catch (err) {
-      console.error('Erro no processo de envio:', err.response?.data?.response?.message || err.message);
-      return res.status(500).send(`Erro ao enviar mensagem: ${err.message}`);
+      await axios.post(endpoint, payload, { headers: { apikey: process.env.EVOLUTION_API_KEY } });
+      return res.status(201).json(mensagem);
     }
+
+    return res.status(400).send('Corpo da requisição inválido. Mensagem ou mídia necessária.');
+
+  } catch (err) {
+    console.error('Erro no envio de mensagem:', err.response?.data || err.message);
+    return res.status(500).send(`Erro ao enviar mensagem: ${err.message}`);
   }
-
 });
 
-// Buscar mensagens com paginação baseada no criado_em
-router.get('/chat/:chat_id', async (req, res) => {
+// --- BUSCAR MENSAGENS COM PAGINAÇÃO ---
+router.get('/chat/:chat_id', authMiddleware, async (req, res) => {
   const { chat_id } = req.params;
   const { limit = 20, cursor } = req.query;
 
@@ -190,46 +161,33 @@ router.get('/chat/:chat_id', async (req, res) => {
         )
       `)
       .eq('chat_id', chat_id)
-      .order('criado_em', { ascending: false }) // mais recentes primeiro
+      .order('criado_em', { ascending: false })
       .limit(limit);
 
-    // Se tiver cursor, busca mensagens mais antigas
     if (cursor) {
       const ts = Buffer.from(cursor, 'base64').toString('utf8');
       query = query.lt('criado_em', ts);
     }
 
     const { data, error } = await query;
+    if (error) return res.status(500).send('Erro ao buscar mensagens.');
 
-    if (error) {
-      console.error('Erro ao buscar mensagens:', error);
-      return res.status(500).send('Erro ao buscar mensagens.');
-    }
+    const nextCursor = data.length > 0
+      ? Buffer.from(data[data.length - 1].criado_em).toString('base64')
+      : null;
 
-    // Definir novo cursor (timestamp da última mensagem retornada)
-    let nextCursor = null;
-    if (data.length > 0) {
-      const last = data[data.length - 1];
-      nextCursor = Buffer.from(last.criado_em).toString('base64');
-    }
-
-    return res.json({
-      messages: data,
-      nextCursor
-    });
+    return res.json({ messages: data, nextCursor });
   } catch (err) {
-    console.error('Erro inesperado ao buscar mensagens:', err);
+    console.error('Erro ao buscar mensagens:', err);
     return res.status(500).send('Erro inesperado ao buscar mensagens.');
   }
 });
 
-// Apagar mensagem (soft delete no Supabase + Evolution API)
-router.delete('/:id', async (req, res) => {
-
+// --- APAGAR MENSAGEM ---
+router.delete('/:id', authMiddleware, async (req, res) => {
   const { id } = req.params;
 
   try {
-    // 1. Buscar dados da mensagem + chat (pra pegar instance e número)
     const { data: msgData, error: msgError } = await supabase
       .from('messages')
       .select(`
@@ -244,32 +202,20 @@ router.delete('/:id', async (req, res) => {
       .eq('id', id)
       .single();
 
-    if (msgError || !msgData) {
-      console.error('Mensagem não encontrada:', msgError);
-      return res.status(404).json({ error: 'Mensagem não encontrada' });
-    }
-
-    if (msgData.excluded) {
-      return res.status(400).json({ error: 'Mensagem já excluída' });
-    }
+    if (msgError || !msgData) return res.status(404).json({ error: 'Mensagem não encontrada' });
+    if (msgData.excluded) return res.status(400).json({ error: 'Mensagem já excluída' });
 
     const instanceName = msgData.chats.connection_id;
-    const remoteJid = msgData.chats.contato_numero + '@s.whatsapp.net';
+    const remoteJid = `${msgData.chats.contato_numero}@s.whatsapp.net`;
 
-    // 2. Apagar no WhatsApp via Evolution
     try {
       await axios.delete(
-        `http://localhost:8081/chat/deleteMessageForEveryone/${instanceName}`,
+        `${EVOLUTION_API_URL}/chat/deleteMessageForEveryone/${instanceName}`,
         {
-          data: {
-            id: msgData.id,
-            remoteJid,
-            fromMe: true
-          },
+          data: { id: msgData.id, remoteJid, fromMe: true },
           headers: { apikey: process.env.EVOLUTION_API_KEY }
         }
       );
-
     } catch (evoErr) {
       console.error('Erro ao apagar no Evolution API:', evoErr.response?.data || evoErr.message);
       return res.status(500).json({ error: 'Falha ao apagar no WhatsApp' });
@@ -281,6 +227,5 @@ router.delete('/:id', async (req, res) => {
     return res.status(500).json({ error: 'Erro inesperado ao excluir mensagem' });
   }
 });
-
 
 module.exports = router;

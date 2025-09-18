@@ -141,8 +141,29 @@ router.delete('/:id', authMiddleware, async (req, res) => {
   if (!id) return sendError(res, 400, 'ID da conexão é obrigatório.');
 
   try {
-    const { error } = await supabase.from('connections').delete().eq('id', id);
-    if (error) throw error;
+
+    const { data: attendantsData } = await supabase
+      .from('attendants')
+      .select('user_id')
+      .eq('connection_id', id);
+
+    const authIds = attendantsData?.map(a => a.user_id) || [];
+
+    const { error: delError } = await supabase
+      .from('connections')
+      .delete()
+      .eq('id', id);
+
+
+    for (const authId of authIds) {
+      try {
+        await supabase.auth.admin.deleteUser(authId);
+      } catch (err) {
+        console.error(`Erro ao deletar auth.user ${authId}:`, err.message || err);
+      }
+    }
+
+    if (delError) throw delError;
 
     // Remove do Evolution
     try {
