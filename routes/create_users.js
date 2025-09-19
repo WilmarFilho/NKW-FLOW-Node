@@ -18,17 +18,13 @@ const checkInternalKey = (req) => {
 
 // 🔒 Middleware para validar token JWT do Supabase (admins)
 const checkAdminJWT = async (req) => {
-  const authHeader = req.headers['authorization'] || '';
-  if (!authHeader.startsWith('Bearer ')) return null;
 
-  const token = authHeader.split(' ')[1];
-  const { data: { user }, error } = await supabase.auth.getUser(token);
-  if (error || !user) return null;
+  const admin_id = req.authId;
 
   const { data: dbUser } = await supabase
     .from('users')
     .select('tipo_de_usuario')
-    .eq('auth_id', user.id)
+    .eq('auth_id', admin_id)
     .single();
 
   if (!dbUser || dbUser.tipo_de_usuario !== 'admin') return null;

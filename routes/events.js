@@ -210,6 +210,8 @@ router.post('/dispatch', async (req, res) => {
 
     const { connection, event, data } = req.body;
 
+    console.log(event, connection);
+
     const { data: fullConnection } = await supabase
         .from('connections')
         .select(`
@@ -219,6 +221,10 @@ router.post('/dispatch', async (req, res) => {
             `)
         .eq('id', connection)
         .single();
+
+    if (!fullConnection) {
+        return res.status(400).json({ error: 'Conexão não encontrada' });
+    }
 
     const userId = fullConnection.user.id;
 
@@ -562,7 +568,7 @@ router.post('/dispatch', async (req, res) => {
     }
 
     if (event === 'connection.update' && data.state === 'close') {
-        
+
         const { data: attendantsData } = await supabase
             .from('attendants')
             .select('user_id')
@@ -575,7 +581,7 @@ router.post('/dispatch', async (req, res) => {
             .delete()
             .eq('id', connection);
 
-    
+
         for (const authId of authIds) {
             try {
                 await supabase.auth.admin.deleteUser(authId);
