@@ -243,7 +243,9 @@ router.post('/dispatch', async (req, res) => {
         data.message?.reactionMessage ||
         !data.message ||
         (Object.keys(data.message).length === 0)
-    )
+    ) {
+        return res.status(200).json({ event: 'ignored', message: 'Mensagem ignorada (editada, reação ou vazia)' });
+    }
 
         if (event === 'connection.update' && data.state === 'open' && data.wuid) {
 
