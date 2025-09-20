@@ -236,8 +236,6 @@ router.post('/dispatch', async (req, res) => {
         connection: fullConnection
     };
 
-    // Ignora mensagens editadas, de reação ou vazias
-
     if (
         data.message?.editedMessage ||
         data.message?.reactionMessage ||
