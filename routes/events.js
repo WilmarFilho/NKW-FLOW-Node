@@ -210,7 +210,7 @@ router.post('/dispatch', async (req, res) => {
 
     const { connection, event, data } = req.body;
 
-    console.log(event, connection);
+
 
     const { data: fullConnection } = await supabase
         .from('connections')
@@ -239,62 +239,63 @@ router.post('/dispatch', async (req, res) => {
     if (
         data.message?.editedMessage ||
         data.message?.reactionMessage ||
+        data.message?.templateMessage ||
         !data.message ||
         (Object.keys(data.message).length === 0)
     ) {
         return res.status(200).json({ event: 'ignored', message: 'Mensagem ignorada (editada, reação ou vazia)' });
     }
 
-        if (event === 'connection.update' && data.state === 'open' && data.wuid) {
+    if (event === 'connection.update' && data.state === 'open' && data.wuid) {
 
-            const numero = data.wuid.split('@')[0];
+        const numero = data.wuid.split('@')[0];
 
-            const { data: currentConnection, error: connError } = await supabase
-                .from('connections')
-                .select('id, user_id')
-                .eq('id', connection)
-                .maybeSingle();
+        const { data: currentConnection, error: connError } = await supabase
+            .from('connections')
+            .select('id, user_id')
+            .eq('id', connection)
+            .maybeSingle();
 
-            if (connError || !currentConnection) {
-                enrichedEvent.event = 'error';
-                enrichedEvent.message = 'Conexão não encontrada';
-            }
-
-            const { data: duplicate, error: dupError } = await supabase
-                .from('connections')
-                .select('id')
-                .eq('user_id', currentConnection.user_id)
-                .eq('numero', numero)
-                .neq('id', connection)
-                .maybeSingle();
-
-            if (dupError) {
-                enrichedEvent.error = true;
-                enrichedEvent.message = 'Erro ao verificar duplicidade';
-            }
-
-            if (duplicate) {
-                enrichedEvent.error = true;
-                enrichedEvent.message = 'Conexao duplicada';
-
-                await supabase.from('connections').delete().eq('id', connection);
-                await axios.delete(`http://localhost:8081/instance/delete/${connection}`, { headers: { apikey: process.env.EVOLUTION_API_KEY } });
-            }
-
-            const { data: updatedConnection, error } = await supabase
-                .from('connections')
-                .update({
-                    numero,
-                    status: true
-                })
-                .eq('id', connection)
-                .select('*')
-                .maybeSingle();
-
-            enrichedEvent.event = 'connection.update';
-            enrichedEvent.connection = updatedConnection;
-
+        if (connError || !currentConnection) {
+            enrichedEvent.event = 'error';
+            enrichedEvent.message = 'Conexão não encontrada';
         }
+
+        const { data: duplicate, error: dupError } = await supabase
+            .from('connections')
+            .select('id')
+            .eq('user_id', currentConnection.user_id)
+            .eq('numero', numero)
+            .neq('id', connection)
+            .maybeSingle();
+
+        if (dupError) {
+            enrichedEvent.error = true;
+            enrichedEvent.message = 'Erro ao verificar duplicidade';
+        }
+
+        if (duplicate) {
+            enrichedEvent.error = true;
+            enrichedEvent.message = 'Conexao duplicada';
+
+            await supabase.from('connections').delete().eq('id', connection);
+            await axios.delete(`http://localhost:8081/instance/delete/${connection}`, { headers: { apikey: process.env.EVOLUTION_API_KEY } });
+        }
+
+        const { data: updatedConnection, error } = await supabase
+            .from('connections')
+            .update({
+                numero,
+                status: true
+            })
+            .eq('id', connection)
+            .select('*')
+            .maybeSingle();
+
+        enrichedEvent.event = 'connection.update';
+        enrichedEvent.connection = updatedConnection;
+
+    }
 
     if (event === 'chats.upsert') {
 

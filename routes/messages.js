@@ -41,8 +41,6 @@ router.post('/', authMiddleware, async (req, res) => {
       .eq('id', user_id)
       .single();
 
-      console.log(userData);
-
     if (!userData.status) {
       return res.status(403).send('Atendente inativo não pode enviar mensagens.');
     }
