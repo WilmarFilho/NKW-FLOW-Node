@@ -41,11 +41,7 @@ router.post('/', authMiddleware, async (req, res) => {
 
     const instanceId = data[0].id;
 
-    console.log('oi')
-
     // Criar instância no Evolution
-
-    console.log(process.env.EVOLUTION_API_URL)
 
     const evolutionResponse = await axios.post(
       `${process.env.EVOLUTION_API_URL}/instance/create`,
@@ -55,14 +51,12 @@ router.post('/', authMiddleware, async (req, res) => {
         groupsIgnore: true,
         integration: 'WHATSAPP-BAILEYS',
         webhook: {
-          url: 'http://host.docker.internal:5678/webhook/evolution',
+          url: `${process.env.N8N_HOST}/webhook/evolution`,
           events: ['CONNECTION_UPDATE', 'MESSAGES_UPSERT', 'SEND_MESSAGE', 'CHATS_UPSERT', 'MESSAGES_DELETE'],
         },
       },
       { headers: { apikey: process.env.EVOLUTION_API_KEY } }
     );
-
-    console.log(evolutionResponse)
 
     res.status(201).json(evolutionResponse.data.qrcode.base64);
   } catch (err) {
