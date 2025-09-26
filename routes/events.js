@@ -151,8 +151,6 @@ router.post('/dispatch', async (req, res) => {
 
     const { connection, event, data } = req.body;
 
-
-
     const { data: fullConnection } = await supabase
         .from('connections')
         .select(`
@@ -178,11 +176,13 @@ router.post('/dispatch', async (req, res) => {
     };
 
     if (
-        data.message?.editedMessage ||
-        data.message?.reactionMessage ||
-        data.message?.templateMessage ||
-        !data.message ||
-        (Object.keys(data.message).length === 0)
+        data.message &&
+        (
+            data.message.editedMessage ||
+            data.message.reactionMessage ||
+            data.message.templateMessage ||
+            Object.keys(data.message).length === 0
+        )
     ) {
         return res.status(200).json({ event: 'ignored', message: 'Mensagem ignorada (editada, reação ou vazia)' });
     }
