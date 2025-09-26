@@ -208,6 +208,8 @@ router.get('/:user_id', async (req, res) => {
 
 router.post('/dispatch', async (req, res) => {
 
+    console.log('Recebido webhook:', req.body);
+
     const { connection, event, data } = req.body;
 
 
