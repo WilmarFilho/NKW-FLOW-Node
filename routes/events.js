@@ -543,9 +543,11 @@ router.get('/:user_id', async (req, res) => {
     const { user_id } = req.params;
     const { token } = req.query;
 
-     console.log('OPA:', req.body); // TA BATENDO AQUI E VINDO VAZIO SENDO QUE ERA PRA BATER NA ROTA DO DISPATCH E VIM COM O BODY
+    console.log('opa')
 
     if (!token) return res.status(401).json({ error: "Token ausente" });
+
+
 
     try {
         const decoded = jwt.decode(token);
