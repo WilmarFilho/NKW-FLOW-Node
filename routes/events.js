@@ -147,8 +147,6 @@ async function processarMensagemComMedia(data, connectionId, remetente, tipoMedi
 
 router.post('/dispatch', async (req, res) => {
 
-    console.log('Recebido webhook:', req.body);
-
     const { connection, event, data } = req.body;
 
     const { data: fullConnection } = await supabase
@@ -542,8 +540,6 @@ router.get('/:user_id', async (req, res) => {
 
     const { user_id } = req.params;
     const { token } = req.query;
-
-    console.log('opa')
 
     if (!token) return res.status(401).json({ error: "Token ausente" });
 
