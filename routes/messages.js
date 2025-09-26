@@ -8,7 +8,7 @@ const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_KEY
 const { authMiddleware } = require('../middleware/auth'); // middleware de autenticação
 const { eventClientsByUser } = require('./events.js');
 
-const EVOLUTION_API_URL = process.env.EVOLUTION_API_URL || 'http://localhost:8081';
+const EVOLUTION_API_URL = process.env.EVOLUTION_API_URL;
 
 // --- CRIAR MENSAGEM E ENVIAR PARA EVOLUTION ---
 router.post('/', authMiddleware, async (req, res) => {

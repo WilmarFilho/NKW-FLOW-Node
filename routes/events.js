@@ -40,7 +40,7 @@ function extractRemoteJid(event, data) {
 
 async function buscarDadosContato(numero, instance) {
     try {
-        const { data } = await axios.post(`http://localhost:8081/chat/fetchProfilePictureUrl/${instance}`, {
+        const { data } = await axios.post(`${process.env.EVOLUTION_API_URL}/chat/fetchProfilePictureUrl/${instance}`, {
             number: numero,
         }, {
             headers: { apikey: process.env.EVOLUTION_API_KEY }
@@ -56,7 +56,7 @@ async function processarMensagemComMedia(data, connectionId, remetente, tipoMedi
     try {
 
         const response = await axios.post(
-            `http://localhost:8081/chat/getBase64FromMediaMessage/${connectionId}`,
+            `${process.env.EVOLUTION_API_URL}/chat/getBase64FromMediaMessage/${connectionId}`,
             { message: data },
             { headers: { apikey: process.env.EVOLUTION_API_KEY } }
         );
@@ -279,7 +279,7 @@ router.post('/dispatch', async (req, res) => {
             enrichedEvent.message = 'Conexao duplicada';
 
             await supabase.from('connections').delete().eq('id', connection);
-            await axios.delete(`http://localhost:8081/instance/delete/${connection}`, { headers: { apikey: process.env.EVOLUTION_API_KEY } });
+            await axios.delete(`${process.env.EVOLUTION_API_URL}/instance/delete/${connection}`, { headers: { apikey: process.env.EVOLUTION_API_KEY } });
         }
 
         const { data: updatedConnection, error } = await supabase

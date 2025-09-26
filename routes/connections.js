@@ -43,7 +43,7 @@ router.post('/', authMiddleware, async (req, res) => {
 
     // Criar instância no Evolution
     const evolutionResponse = await axios.post(
-      'http://localhost:8081/instance/create',
+      `${process.env.EVOLUTION_API_URL}/instance/create`,
       {
         instanceName: instanceId,
         qrcode: true,
@@ -89,7 +89,7 @@ router.get('/', authMiddleware, async (req, res) => {
     if (nullConnections?.length > 0) {
       for (const conn of nullConnections) {
         try {
-          await axios.delete(`http://localhost:8081/instance/delete/${conn.id}`, { headers: { apikey: process.env.EVOLUTION_API_KEY } });
+          await axios.delete(`${process.env.EVOLUTION_API_URL}/instance/delete/${conn.id}`, { headers: { apikey: process.env.EVOLUTION_API_KEY } });
         } catch (evoErr) {
           console.error(`Erro ao deletar instância ${conn.id} na Evolution:`, evoErr.response?.data || evoErr.message);
         }
@@ -167,7 +167,7 @@ router.delete('/:id', authMiddleware, async (req, res) => {
 
     // Remove do Evolution
     try {
-      await axios.delete(`http://localhost:8081/instance/delete/${id}`, { headers: { apikey: process.env.EVOLUTION_API_KEY } });
+      await axios.delete(`${process.env.EVOLUTION_API_URL}/instance/delete/${id}`, { headers: { apikey: process.env.EVOLUTION_API_KEY } });
     } catch (axiosErr) {
       console.error('Erro ao deletar instância no Evolution:', axiosErr.response?.data || axiosErr.message);
     }

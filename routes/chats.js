@@ -164,7 +164,7 @@ router.put('/fetchImage/:chatId', authMiddleware, async (req, res) => {
     if (error || !chat) return res.status(404).json({ error: 'Chat não encontrado' });
 
     const fotoURL = await axios.post(
-      `http://localhost:8081/chat/fetchProfilePictureUrl/${chat.connection_id}`,
+      `${process.env.EVOLUTION_API_URL}/chat/fetchProfilePictureUrl/${chat.connection_id}`,
       { number: chat.contato_numero },
       { headers: { apikey: process.env.EVOLUTION_API_KEY } }
     );

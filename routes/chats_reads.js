@@ -31,7 +31,7 @@ router.post('/:id', authMiddleware, async (req, res) => {
 
     if (payload.readMessages.length > 0) {
       await axios.post(
-        `http://localhost:8081/chat/markMessageAsRead/${chat.connection_id}`,
+        `${process.env.EVOLUTION_API_URL}/chat/markMessageAsRead/${chat.connection_id}`,
         payload,
         {
           headers: {
