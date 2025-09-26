@@ -44,6 +44,9 @@ router.post('/', authMiddleware, async (req, res) => {
     console.log('oi')
 
     // Criar instância no Evolution
+
+    console.log(process.env.EVOLUTION_API_URL)
+
     const evolutionResponse = await axios.post(
       `${process.env.EVOLUTION_API_URL}/instance/create`,
       {
