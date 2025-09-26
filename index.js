@@ -66,6 +66,14 @@ app.use(express.json());
 app.use('/login', loginRoutes);
 app.use('/events', eventsRoutes);
 
+// Rota de teste livre
+app.get('/teste', (req, res) => {
+    res.json({
+        status: 'ok',
+        mensagem: 'Rota de teste funcionando!'
+    });
+});
+
 // Rotas protegidas
 app.use('/users', authMiddleware, usersRoutes);
 app.use('/attendants', authMiddleware, attendantsRoutes);
