@@ -150,6 +150,8 @@ router.get('/:user_id', async (req, res) => {
     const { user_id } = req.params;
     const { token } = req.query;
 
+     console.log('OPA:', req.body);
+
     if (!token) return res.status(401).json({ error: "Token ausente" });
 
     try {
