@@ -62,6 +62,8 @@ router.post('/', authMiddleware, async (req, res) => {
       { headers: { apikey: process.env.EVOLUTION_API_KEY } }
     );
 
+    console.log(evolutionResponse)
+
     res.status(201).json(evolutionResponse.data.qrcode.base64);
   } catch (err) {
     console.error('Erro ao criar conexão:', err.response?.data || err.message || err);
