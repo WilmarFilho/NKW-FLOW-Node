@@ -145,69 +145,6 @@ async function processarMensagemComMedia(data, connectionId, remetente, tipoMedi
     }
 }
 
-router.get('/:user_id', async (req, res) => {
-
-    const { user_id } = req.params;
-    const { token } = req.query;
-
-     console.log('OPA:', req.body);
-
-    if (!token) return res.status(401).json({ error: "Token ausente" });
-
-    try {
-        const decoded = jwt.decode(token);
-        if (!decoded || decoded.sub !== user_id) {
-            return res.status(403).json({ error: "Token não corresponde ao usuário" });
-        }
-    } catch (err) {
-        return res.status(401).json({ error: "Token inválido" });
-    }
-
-    // Primeiro pega o tipo de usuário
-    const { data: user, error: userError } = await supabase
-        .from('users')
-        .select('auth_id, tipo_de_usuario')
-        .eq('auth_id', user_id)
-        .maybeSingle();
-
-    if (userError || !user) {
-        return res.status(400).json({ error: 'Usuário não encontrado' });
-    }
-
-    let resolvedUserId = user.auth_id;
-
-    if (user.tipo_de_usuario !== 'admin') {
-        // Se for atendente, resolve o admin
-        const { data: attendant, error: attError } = await supabase
-            .from('attendants')
-            .select('user_admin_id')
-            .eq('user_id', user.auth_id)
-            .maybeSingle();
-
-        if (attError || !attendant) {
-            return res.status(400).json({ error: 'Atendente não vinculado a admin' });
-        }
-
-        resolvedUserId = attendant.user_admin_id;
-    }
-
-    // Configura SSE
-    res.setHeader('Content-Type', 'text/event-stream');
-    res.setHeader('Cache-Control', 'no-cache');
-    res.setHeader('Connection', 'keep-alive');
-    res.flushHeaders();
-
-    if (!eventClientsByUser[resolvedUserId]) {
-        eventClientsByUser[resolvedUserId] = [];
-    }
-    eventClientsByUser[resolvedUserId].push(res);
-
-    req.on('close', () => {
-        eventClientsByUser[resolvedUserId] =
-            eventClientsByUser[resolvedUserId].filter(c => c !== res);
-    });
-});
-
 router.post('/dispatch', async (req, res) => {
 
     console.log('Recebido webhook:', req.body);
@@ -599,6 +536,71 @@ router.post('/dispatch', async (req, res) => {
     return res.status(enrichedEvent.error ? 400 : 200).json(enrichedEvent);
 
 });
+
+
+router.get('/:user_id', async (req, res) => {
+
+    const { user_id } = req.params;
+    const { token } = req.query;
+
+     console.log('OPA:', req.body); // TA BATENDO AQUI E VINDO VAZIO SENDO QUE ERA PRA BATER NA ROTA DO DISPATCH E VIM COM O BODY
+
+    if (!token) return res.status(401).json({ error: "Token ausente" });
+
+    try {
+        const decoded = jwt.decode(token);
+        if (!decoded || decoded.sub !== user_id) {
+            return res.status(403).json({ error: "Token não corresponde ao usuário" });
+        }
+    } catch (err) {
+        return res.status(401).json({ error: "Token inválido" });
+    }
+
+    // Primeiro pega o tipo de usuário
+    const { data: user, error: userError } = await supabase
+        .from('users')
+        .select('auth_id, tipo_de_usuario')
+        .eq('auth_id', user_id)
+        .maybeSingle();
+
+    if (userError || !user) {
+        return res.status(400).json({ error: 'Usuário não encontrado' });
+    }
+
+    let resolvedUserId = user.auth_id;
+
+    if (user.tipo_de_usuario !== 'admin') {
+        // Se for atendente, resolve o admin
+        const { data: attendant, error: attError } = await supabase
+            .from('attendants')
+            .select('user_admin_id')
+            .eq('user_id', user.auth_id)
+            .maybeSingle();
+
+        if (attError || !attendant) {
+            return res.status(400).json({ error: 'Atendente não vinculado a admin' });
+        }
+
+        resolvedUserId = attendant.user_admin_id;
+    }
+
+    // Configura SSE
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection', 'keep-alive');
+    res.flushHeaders();
+
+    if (!eventClientsByUser[resolvedUserId]) {
+        eventClientsByUser[resolvedUserId] = [];
+    }
+    eventClientsByUser[resolvedUserId].push(res);
+
+    req.on('close', () => {
+        eventClientsByUser[resolvedUserId] =
+            eventClientsByUser[resolvedUserId].filter(c => c !== res);
+    });
+});
+
 
 module.exports = {
     router,
