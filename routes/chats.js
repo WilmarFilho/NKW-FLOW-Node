@@ -25,8 +25,6 @@ router.get('/', authMiddleware, async (req, res) => {
 
   if (!user_id) return res.status(400).json({ error: 'User ID é obrigatório.' });
 
-  let resolvedUserId = user_id;
-
   try {
     // 1) Pega attendant do usuário autenticado
     const { data: attendant, error: attendantError } = await supabase
@@ -51,52 +49,48 @@ router.get('/', authMiddleware, async (req, res) => {
     }
 
     // 3) Monta query das conexões
-    let query = supabase.from('connections').select('id').eq('user_id', resolvedUserId);
+    let query = supabase.from('connections').select('id').eq('user_id', user_id);
 
     if (attendant) query = query.eq('id', attendant.connection_id);
     if (attendantFilter) query = query.eq('id', attendantFilter.connection_id);
-    if (connection_id) query = query.eq('id', connection_id);
+    if (connection_id) {
+      // permite múltiplos connection_id separados por vírgula
+      const ids = connection_id.split(',').map(id => id.trim());
+      query = query.in('id', ids);
+    }
 
     const { data: conexoes } = await query;
 
-    if (!conexoes || conexoes.length === 0) return res.json({ chats: [], nextCursor: null });
+    if (!conexoes || conexoes.length === 0) {
+      return res.json({ chats: [], nextCursor: null });
+    }
 
-    // 2) Chama RPC
-    const chamadas = conexoes.map(c =>
-      c.id &&
-      supabase.rpc('chats_com_ultima_mensagem', {
-        p_limit: limit,
-        p_cursor: cursor ? Buffer.from(cursor, 'base64').toString('utf8') : null,
-        p_search: search || null,
-        p_status: status || 'Open',
-        p_owner: owner || 'all',
-        p_user_id: owner === 'mine' ? user_id : null,
-        p_ia_status: iaStatus || 'todos',
-        p_attendant_id: attendant_id || null,
-        p_connection_id: c.id
-      })
-    ).filter(Boolean);
+    const connectionIds = conexoes.map(c => c.id);
 
-    const resultados = await Promise.allSettled(chamadas);
-    const chats = resultados
-      .filter(r => r.status === 'fulfilled' && r.value.data)
-      .flatMap(r => r.value.data);
+    // 4) Agora apenas UMA chamada à RPC
+    const { data: chats, error } = await supabase.rpc('chats_com_ultima_mensagem', {
+      p_limit: limit,
+      p_cursor: cursor ? Buffer.from(cursor, 'base64').toString('utf8') : null,
+      p_search: search || null,
+      p_status: status || 'Open',
+      p_owner: owner || 'all',
+      p_user_id: owner === 'mine' ? user_id : null,
+      p_ia_status: iaStatus || 'todos',
+      p_attendant_id: attendant_id || null,
+      p_connection_ids: connectionIds
+    });
 
-    // 3) Remove duplicatas
-    const todosOsChats = chats.reduce((acc, chat) => {
-      if (!acc.some(c => c.id === chat.id)) acc.push(chat);
-      return acc;
-    }, []);
+    if (error) throw error;
 
-    // 4) Enriquecer com nome do dono
-    const donoIds = [...new Set(todosOsChats.map(c => c.user_id).filter(Boolean))];
+    // 5) Enriquecer com nome do dono
+    const donoIds = [...new Set(chats.map(c => c.user_id).filter(Boolean))];
     let donos = [];
     if (donoIds.length > 0) {
       const { data } = await supabase.from('users').select('id, nome').in('id', donoIds);
       donos = data;
     }
 
-    const chatsComDono = todosOsChats.map(chat => {
+    const chatsComDono = chats.map(chat => {
       const dono = donos.find(d => d.id === chat.user_id);
       return { ...chat, user_nome: dono ? dono.nome : null };
     });
