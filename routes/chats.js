@@ -16,34 +16,49 @@ router.get('/', authMiddleware, async (req, res) => {
     owner,
     search,
     iaStatus,
-    connectionId,
-    attendantId,
+    connection_id,
+    attendant_id,
   } = req.query;
 
-  const user_id = req.userId;   // sempre enviado do frontend
-  const auth_id = req.authId;                 // do token JWT
+  const user_id = req.userId;
+  const auth_id = req.authId;
 
   if (!user_id) return res.status(400).json({ error: 'User ID é obrigatório.' });
 
-  let resolvedUserId = null;
+  let resolvedUserId = user_id;
 
   try {
-    const { data: attendant } = await supabase
+    // 1) Pega attendant do usuário autenticado
+    const { data: attendant, error: attendantError } = await supabase
       .from('attendants')
       .select('user_admin_id, connection_id')
       .eq('user_id', auth_id)
       .maybeSingle();
 
-    resolvedUserId = attendant
-      ? (await supabase.from('users').select('id').eq('auth_id', attendant.user_admin_id).maybeSingle()).data.id
-      : user_id;
+    if (attendantError) throw attendantError;
 
-    // 1) Busca conexões
+    // 2) Se foi passado attendant_id no filtro, busca a connection dele
+    let attendantFilter = null;
+    if (attendant_id) {
+      const { data, error } = await supabase
+        .from('attendants')
+        .select('connection_id')
+        .eq('user_id', attendant_id)
+        .maybeSingle();
+
+      if (error) throw error;
+      attendantFilter = data;
+    }
+
+    // 3) Monta query das conexões
     let query = supabase.from('connections').select('id').eq('user_id', resolvedUserId);
-    if (attendant?.connection_id) query = query.eq('id', attendant.connection_id);
-    if (connectionId) query = query.eq('id', connectionId);
+
+    if (attendant) query = query.eq('id', attendant.connection_id);
+    if (attendantFilter) query = query.eq('id', attendantFilter.connection_id);
+    if (connection_id) query = query.eq('id', connection_id);
 
     const { data: conexoes } = await query;
+
     if (!conexoes || conexoes.length === 0) return res.json({ chats: [], nextCursor: null });
 
     // 2) Chama RPC
@@ -57,7 +72,8 @@ router.get('/', authMiddleware, async (req, res) => {
         p_owner: owner || 'all',
         p_user_id: owner === 'mine' ? user_id : null,
         p_ia_status: iaStatus || 'todos',
-        p_attendant_id: attendantId || null
+        p_attendant_id: attendant_id || null,
+        p_connection_id: c.id
       })
     ).filter(Boolean);
 
