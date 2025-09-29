@@ -45,7 +45,7 @@ async function buscarDadosContato(numero, instance) {
         }, {
             headers: { apikey: process.env.EVOLUTION_API_KEY }
         });
-        return { profilePictureUrl: data.profilePictureUrl };
+        return { profilePictureUrl: data.profilePictureUrl, wuid: data.wuid };
     } catch (err) {
         console.error(`Erro ao buscar foto do número ${numero}:`, err.message);
         return null;
@@ -276,7 +276,13 @@ router.post('/dispatch', async (req, res) => {
         const rjid = extractRemoteJid(event, data);
         if (rjid && !/@g\.us$/.test(rjid)) markMessageActivity(connection, rjid);
 
-        const contatoNumero = rjid.replaceAll('@s.whatsapp.net', '');
+        let contatoNumero = rjid.replaceAll('@s.whatsapp.net', '');
+
+        if (contatoNumero.endsWith('@lid')) {
+            const { wuid } = await buscarDadosContato(contatoNumero, connection);
+            contatoNumero = wuid;
+        }
+
         const connectionId = fullConnection.id;
 
         let chatId = null;
