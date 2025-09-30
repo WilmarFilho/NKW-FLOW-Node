@@ -292,7 +292,7 @@ router.post('/dispatch', async (req, res) => {
         const { data: userData, error: userTypeError } = await supabase
             .from('users')
             .select('tipo_de_usuario')
-            .eq('id', fullConnection.user.id)
+            .eq('id', fullConnection.user_id)
             .single();
 
         if (userTypeError || !userData) {
@@ -305,7 +305,7 @@ router.post('/dispatch', async (req, res) => {
             const { data: attendantData, error: attendantError } = await supabase
                 .from('attendants')
                 .select('user_admin_id')
-                .eq('user_id', fullConnection.user.id)
+                .eq('user_id', fullConnection.user_id)
                 .single();
 
             if (attendantError || !attendantData) {
