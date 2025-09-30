@@ -288,6 +288,49 @@ router.post('/dispatch', async (req, res) => {
         let chatId = null;
         let chatCompleto = null;
 
+        // 1. Buscar o tipo de usuário
+        const { data: userData, error: userTypeError } = await supabase
+            .from('users')
+            .select('tipo_de_usuario')
+            .eq('id', fullConnection.user.id)
+            .single();
+
+        if (userTypeError || !userData) {
+            return res.status(400).json({ error: 'Usuário não encontrado para verificação de duplicidade de chat.' });
+        }
+
+        let adminId = fullConnection.user.id;
+        if (userData.tipo_de_usuario !== 'admin') {
+            // Se for atendente, buscar o user_admin_id
+            const { data: attendantData, error: attendantError } = await supabase
+                .from('attendants')
+                .select('user_admin_id')
+                .eq('user_id', fullConnection.user.id)
+                .single();
+
+            if (attendantError || !attendantData) {
+                return res.status(400).json({ error: 'Atendente não vinculado a admin para verificação de duplicidade de chat.' });
+            }
+            adminId = attendantData.user_admin_id;
+        }
+
+        // 2. Buscar todas as conexões do admin
+        const { data: adminConnections, error: adminConnError } = await supabase
+            .from('connections')
+            .select('id, numero')
+            .eq('user_id', adminId);
+
+        if (adminConnError) {
+            return res.status(400).json({ error: 'Erro ao buscar conexões do admin.' });
+        }
+
+        // 3. Verificar se existe outra conexão com o mesmo contatoNumero
+        const duplicateConn = adminConnections.find(conn => conn.numero === contatoNumero);
+
+        if (duplicateConn) {
+            return res.status(200).json({ event: 'ignored', message: 'Chat com número de uma conexão existente.' });
+        }
+
         const { data: chatExistenteArray, error: chatBuscaError } = await supabase
             .from('chats')
             .select('*')
