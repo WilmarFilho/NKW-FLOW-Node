@@ -159,7 +159,7 @@ router.post('/dispatch', async (req, res) => {
         .eq('id', connection)
         .single();
 
-    if (!fullConnection || !fullConnection.status) {
+    if (!fullConnection || fullConnection.status === false) {
         return res.status(400).json({ error: 'Conexão não encontrada ou desativada' });
     }
 
