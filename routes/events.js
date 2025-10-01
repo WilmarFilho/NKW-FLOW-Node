@@ -159,8 +159,8 @@ router.post('/dispatch', async (req, res) => {
         .eq('id', connection)
         .single();
 
-    if (!fullConnection) {
-        return res.status(400).json({ error: 'Conexão não encontrada' });
+    if (!fullConnection || !fullConnection.status) {
+        return res.status(400).json({ error: 'Conexão não encontrada ou desativada' });
     }
 
     const userId = fullConnection.user.id;
@@ -642,7 +642,13 @@ router.get('/:user_id', async (req, res) => {
     }
     eventClientsByUser[resolvedUserId].push(res);
 
+    // 🔴 Adiciona heartbeat
+    const heartbeat = setInterval(() => {
+        res.write(`event: ping\ndata: {}\n\n`);
+    }, 15000); // envia um ping a cada 15s
+
     req.on('close', () => {
+        clearInterval(heartbeat);
         eventClientsByUser[resolvedUserId] =
             eventClientsByUser[resolvedUserId].filter(c => c !== res);
     });
