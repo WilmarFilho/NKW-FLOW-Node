@@ -61,6 +61,7 @@ router.get('/', authMiddleware, async (req, res) => {
       query = query.in('id', ids);
     }
 
+    console.log('aaaaaaaaaaaaaa')
     const { data: conexoes } = await query;
 
     if (!conexoes || conexoes.length === 0) {
