@@ -138,7 +138,7 @@ async function processarMensagemComMedia(data, connectionId, remetente, tipoMedi
             mensagem,
             mimetype,
             file_name,
-            base64: publicUrl, // <-- IMPORTANTE: Salvamos a URL no campo 'base64'
+            base64: publicUrl, 
             ...(tipoMedia === 'document' && campoMensagem.nome_arquivo ? { nome_arquivo: campoMensagem.nome_arquivo } : {})
         };
 
