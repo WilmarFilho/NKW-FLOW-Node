@@ -138,7 +138,7 @@ async function processarMensagemComMedia(data, connectionId, remetente, tipoMedi
             mensagem,
             mimetype,
             file_name,
-            base64: publicUrl, 
+            base64: publicUrl,
             ...(tipoMedia === 'document' && campoMensagem.nome_arquivo ? { nome_arquivo: campoMensagem.nome_arquivo } : {})
         };
 
@@ -559,6 +559,15 @@ router.post('/dispatch', async (req, res) => {
         }
     }
 
+    // 🔴 Envia também para atendentes dessa conexão
+    const connectionKey = `connection:${fullConnection.id}`;
+    if (eventClientsByUser[connectionKey]) {
+        for (const client of eventClientsByUser[connectionKey]) {
+            client.write(`data: ${JSON.stringify(enrichedEvent)}\n\n`);
+        }
+    }
+
+
     if (event === 'connection.update' && data.state === 'close') {
 
         const { data: attendantsData } = await supabase
@@ -589,13 +598,10 @@ router.post('/dispatch', async (req, res) => {
 
 
 router.get('/:user_id', async (req, res) => {
-
     const { user_id } = req.params;
     const { token } = req.query;
 
     if (!token) return res.status(401).json({ error: "Token ausente" });
-
-
 
     try {
         const decoded = jwt.decode(token);
@@ -606,7 +612,7 @@ router.get('/:user_id', async (req, res) => {
         return res.status(401).json({ error: "Token inválido" });
     }
 
-    // Primeiro pega o tipo de usuário
+    // Verifica tipo do usuário
     const { data: user, error: userError } = await supabase
         .from('users')
         .select('auth_id, tipo_de_usuario')
@@ -617,21 +623,24 @@ router.get('/:user_id', async (req, res) => {
         return res.status(400).json({ error: 'Usuário não encontrado' });
     }
 
-    let resolvedUserId = user.auth_id;
+    let clientKey = null;
 
-    if (user.tipo_de_usuario !== 'admin') {
-        // Se for atendente, resolve o admin
+    if (user.tipo_de_usuario === 'admin') {
+        // Admin recebe todos os eventos das suas conexões
+        clientKey = user.auth_id;
+    } else {
+        // Atendente só recebe eventos da connection dele
         const { data: attendant, error: attError } = await supabase
             .from('attendants')
-            .select('user_admin_id')
+            .select('connection_id')
             .eq('user_id', user.auth_id)
             .maybeSingle();
 
-        if (attError || !attendant) {
-            return res.status(400).json({ error: 'Atendente não vinculado a admin' });
+        if (attError || !attendant || !attendant.connection_id) {
+            return res.status(400).json({ error: 'Atendente não vinculado a conexão' });
         }
 
-        resolvedUserId = attendant.user_admin_id;
+        clientKey = `connection:${attendant.connection_id}`;
     }
 
     // Configura SSE
@@ -640,20 +649,20 @@ router.get('/:user_id', async (req, res) => {
     res.setHeader('Connection', 'keep-alive');
     res.flushHeaders();
 
-    if (!eventClientsByUser[resolvedUserId]) {
-        eventClientsByUser[resolvedUserId] = [];
+    if (!eventClientsByUser[clientKey]) {
+        eventClientsByUser[clientKey] = [];
     }
-    eventClientsByUser[resolvedUserId].push(res);
+    eventClientsByUser[clientKey].push(res);
 
-    // 🔴 Adiciona heartbeat
+    // Heartbeat
     const heartbeat = setInterval(() => {
         res.write(`event: ping\ndata: {}\n\n`);
-    }, 15000); // envia um ping a cada 15s
+    }, 15000);
 
     req.on('close', () => {
         clearInterval(heartbeat);
-        eventClientsByUser[resolvedUserId] =
-            eventClientsByUser[resolvedUserId].filter(c => c !== res);
+        eventClientsByUser[clientKey] =
+            eventClientsByUser[clientKey].filter(c => c !== res);
     });
 });
 

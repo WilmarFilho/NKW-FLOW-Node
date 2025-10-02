@@ -48,29 +48,31 @@ router.get('/', authMiddleware, async (req, res) => {
       attendantFilter = data;
     }
 
-    // 3) Monta query das conexões
-    let query = supabase.from('connections').select('id').eq('user_id', user_id);
+    let query = supabase.from('connections').select('id');
 
-    console.log({ attendant });
-
-    if (attendant) query = query.eq('id', attendant.connection_id);
-    if (attendantFilter) query = query.eq('id', attendantFilter.connection_id);
     if (connection_id) {
-      // permite múltiplos connection_id separados por vírgula
+      // 1) connection_id no query param
       const ids = connection_id.split(',').map(id => id.trim());
       query = query.in('id', ids);
+
+    } else if (attendantFilter && attendantFilter.connection_id) {
+      // 2) attendantFilter
+      query = query.eq('id', attendantFilter.connection_id);
+
+    } else if (attendant && attendant.connection_id) {
+      // 3) attendant autenticado
+      query = query.eq('id', attendant.connection_id);
+
+    } else {
+      // 4) fallback: user_id dono
+      query = query.eq('user_id', user_id);
     }
 
-    console.log('aaaaaaaaaaaaaa')
     const { data: conexoes } = await query;
-
-    console.log(conexoes)
 
     if (!conexoes || conexoes.length === 0) {
       return res.json({ chats: [], nextCursor: null });
     }
-
-    
 
     const connectionIds = conexoes.map(c => c.id);
 
@@ -88,8 +90,6 @@ router.get('/', authMiddleware, async (req, res) => {
     });
 
     if (error) throw error;
-
-    console.log(chats)
 
     // 5) Enriquecer com nome do dono
     const donoIds = [...new Set(chats.map(c => c.user_id).filter(Boolean))];
@@ -109,8 +109,6 @@ router.get('/', authMiddleware, async (req, res) => {
       const last = chatsComDono[chatsComDono.length - 1];
       nextCursor = Buffer.from(last.mensagem_data).toString('base64');
     }
-
-    console.log(chatsComDono)
 
     res.json({ chats: chatsComDono, nextCursor });
 
@@ -152,7 +150,7 @@ router.get('/:id', authMiddleware, async (req, res) => {
     if (!chat) return res.status(404).json({ error: 'Chat não encontrado' });
 
 
-    
+
 
     let dono = null;
     if (chat.user_id) {
