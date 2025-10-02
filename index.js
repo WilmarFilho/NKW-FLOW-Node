@@ -23,8 +23,8 @@ const { authMiddleware } = require('./middleware/auth');
 // Inicia Servidor Express
 const app = express();
 
-app.use(express.json({ limit: '35mb' }));
-app.use(express.urlencoded({ extended: true, limit: '35mb' }));
+app.use(express.json({ limit: '250mb' }));
+app.use(express.urlencoded({ extended: true, limit: '250mb' }));
 
 // Middlewares do Express
 app.use(cors());
