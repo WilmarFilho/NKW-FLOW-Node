@@ -105,6 +105,7 @@ async function processarMensagemComMedia(data, connectionId, remetente, tipoMedi
 
         // ETAPA 6: Montar o objeto final da mensagem com a URL
         let mensagem = null;
+        let file_name = null;
         let mimetype = mimeDefault;
 
         switch (tipoMedia) {
@@ -113,7 +114,7 @@ async function processarMensagemComMedia(data, connectionId, remetente, tipoMedi
                 mimetype = 'image/png';
                 break;
             case 'video':
-                mensagem = data.message.imageMessage?.caption || '';
+                mensagem = data.message.videoMessage?.caption || '';
                 mimetype = 'video/mp4';
                 break;
             case 'audio':
@@ -124,7 +125,8 @@ async function processarMensagemComMedia(data, connectionId, remetente, tipoMedi
                 break;
             case 'document':
                 mimetype = data.message.documentMessage?.mimetype || mimeDefault;
-                mensagem = data.message.documentMessage?.caption || data.message.documentMessage?.fileName || '';
+                mensagem = data.message.documentMessage?.caption;
+                file_name = data.message.documentMessage?.fileName;
                 break;
         }
 
@@ -135,6 +137,7 @@ async function processarMensagemComMedia(data, connectionId, remetente, tipoMedi
             remetente,
             mensagem,
             mimetype,
+            file_name,
             base64: publicUrl, // <-- IMPORTANTE: Salvamos a URL no campo 'base64'
             ...(tipoMedia === 'document' && campoMensagem.nome_arquivo ? { nome_arquivo: campoMensagem.nome_arquivo } : {})
         };
