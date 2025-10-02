@@ -51,6 +51,8 @@ router.get('/', authMiddleware, async (req, res) => {
     // 3) Monta query das conexões
     let query = supabase.from('connections').select('id').eq('user_id', user_id);
 
+    console.log({ attendant });
+
     if (attendant) query = query.eq('id', attendant.connection_id);
     if (attendantFilter) query = query.eq('id', attendantFilter.connection_id);
     if (connection_id) {
@@ -139,6 +141,9 @@ router.get('/:id', authMiddleware, async (req, res) => {
 
     if (error) throw error;
     if (!chat) return res.status(404).json({ error: 'Chat não encontrado' });
+
+
+    
 
     let dono = null;
     if (chat.user_id) {
