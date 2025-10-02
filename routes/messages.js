@@ -22,8 +22,6 @@ router.post('/', authMiddleware, async (req, res) => {
     quote_id
   } = req.body;
 
-  console.log(req.body)
-
   const user_id = req.userId; // pega do token autenticado
 
   if (!mensagem && !base64) {
@@ -78,8 +76,10 @@ router.post('/', authMiddleware, async (req, res) => {
         : '';
     } else {
       instanceName = connection_id;
-      chatNumber = number;
+      // Adiciona '55' caso não exista
+      chatNumber = number.startsWith('55') ? number : `55${number}`;
     }
+
 
     // --- LÓGICA DE ENVIO ---
     let endpoint;
@@ -123,7 +123,6 @@ router.post('/', authMiddleware, async (req, res) => {
     }
 
     if (mensagem) {
-      console.log(instanceName, chatNumber, remetenteNome, mensagem, quote_id)
       endpoint = `${EVOLUTION_API_URL}/message/sendText/${instanceName}`;
       payload = {
         number: chatNumber,
