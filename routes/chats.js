@@ -64,11 +64,13 @@ router.get('/', authMiddleware, async (req, res) => {
     console.log('aaaaaaaaaaaaaa')
     const { data: conexoes } = await query;
 
+    console.log(conexoes)
+
     if (!conexoes || conexoes.length === 0) {
       return res.json({ chats: [], nextCursor: null });
     }
 
-    console.log(conexoes)
+    
 
     const connectionIds = conexoes.map(c => c.id);
 
