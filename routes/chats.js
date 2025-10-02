@@ -67,6 +67,8 @@ router.get('/', authMiddleware, async (req, res) => {
       return res.json({ chats: [], nextCursor: null });
     }
 
+    console.log(conexoes)
+
     const connectionIds = conexoes.map(c => c.id);
 
     // 4) Agora apenas UMA chamada à RPC
@@ -83,6 +85,8 @@ router.get('/', authMiddleware, async (req, res) => {
     });
 
     if (error) throw error;
+
+    console.log(chats)
 
     // 5) Enriquecer com nome do dono
     const donoIds = [...new Set(chats.map(c => c.user_id).filter(Boolean))];
@@ -102,6 +106,8 @@ router.get('/', authMiddleware, async (req, res) => {
       const last = chatsComDono[chatsComDono.length - 1];
       nextCursor = Buffer.from(last.mensagem_data).toString('base64');
     }
+
+    console.log(chatsComDono)
 
     res.json({ chats: chatsComDono, nextCursor });
 
