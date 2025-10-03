@@ -139,12 +139,30 @@ router.post('/webhook', express.raw({ type: 'application/json' }), async (req, r
       case 'checkout.session.completed': {
         const session = event.data.object;
         const customerEmail = session.customer_details.email;
-        const plan = session.metadata.plan;
         const nome = session.customer_details.name || 'Novo Usuário';
         const cidade = session.customer_details.address?.city || null;
         const endereco = session.customer_details.address?.line1 || null;
         const tipo_de_usuario = 'admin';
-    
+
+        // 🔹 Identifica o plano e período pelo price_id
+        const priceId = session.metadata.price_id || session.subscription_items?.[0]?.price?.id;
+
+        let plano;
+        let periodo;
+
+        switch (priceId) {
+          case 'price_1SE89xDLO1TMGeDVcrZn6jzw': // Anual
+            plano = 'basico';
+            periodo = 'anual';
+            break;
+          case 'price_1SDxtmDLO1TMGeDVU26jADP9': // Mensal
+            plano = 'basico';
+            periodo = 'mensal';
+            break;
+          default:
+            throw new Error(`Price ID não mapeado: ${priceId}`);
+        }
+
         // Verifica se usuário já existe
         const { data: existingUser } = await supabase
           .from('users')
@@ -200,7 +218,8 @@ router.post('/webhook', express.raw({ type: 'application/json' }), async (req, r
           user_id: userId,
           stripe_subscription_id: session.subscription,
           stripe_customer_id: session.customer,
-          plan,
+          plano,
+          periodo,
           status: 'active',
           start_date: new Date(),
         }]);
