@@ -284,6 +284,12 @@ router.post('/dispatch', async (req, res) => {
         if (contatoNumero.endsWith('@lid')) {
             const { wuid } = await buscarDadosContato(contatoNumero, connection);
             contatoNumero = wuid;
+            console.log(contatoNumero);
+            if(contatoNumero.endsWith('@lid')) {
+                enrichedEvent.event = 'error';
+                enrichedEvent.message = 'Número inválido, termina com @lid';
+                return res.status(400).json(enrichedEvent);
+            }
         }
 
         const connectionId = fullConnection.id;
