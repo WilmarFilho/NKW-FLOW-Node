@@ -32,6 +32,7 @@ app.use(express.json());
 
 // Rotas públicas
 app.use('/login', loginRoutes);
+app.use('/createUser', create_usersRoutes);
 app.use('/events', eventsRoutes);
 
 // Rotas protegidas
@@ -43,7 +44,6 @@ app.use('/chats', authMiddleware, chatsRoutes);
 app.use('/messages', authMiddleware, messagesRoutes);
 app.use('/chats_reads', authMiddleware, chats_readsRoutes);
 app.use('/upload', authMiddleware, uploadRoutes);
-app.use('/createUser', authMiddleware, create_usersRoutes);
 app.use('/metrics', authMiddleware, metricsRoutes);
 
 // PORTA DO SERVER
