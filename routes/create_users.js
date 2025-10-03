@@ -3,6 +3,7 @@ const router = express.Router();
 const Stripe = require('stripe');
 const { createClient } = require('@supabase/supabase-js');
 require('dotenv').config();
+const { sendEmail } = require('../utils/sendEmail');
 
 const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_KEY);
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
@@ -140,6 +141,7 @@ router.post('/webhook', express.raw({ type: 'application/json' }), async (req, r
         const session = event.data.object;
         const customerEmail = session.customer_details.email;
         const nome = session.customer_details.name || 'Novo Usuário';
+        const numero = session.customer_details.phone || null;
         const cidade = session.customer_details.address?.city || null;
         const endereco = session.customer_details.address?.line1 || null;
         const tipo_de_usuario = 'admin';
@@ -193,6 +195,7 @@ router.post('/webhook', express.raw({ type: 'application/json' }), async (req, r
               nome,
               endereco,
               cidade,
+              numero,
               tipo_de_usuario,
             }])
             .select()
@@ -200,16 +203,26 @@ router.post('/webhook', express.raw({ type: 'application/json' }), async (req, r
 
           if (userError) throw new Error(userError.message);
 
-          //await sendEmail(customerEmail, 'Bem-vindo!', `Sua senha temporária é: ${tempPassword}`);
+          await sendEmail(
+            customerEmail,
+            'Bem-vindo!',
+            `Olá ${nome},\n\nSua senha temporária é: ${tempPassword}\n\nUse-a para acessar sua conta e depois altere no painel.`
+          );
 
           userId = userData.id;
         } else {
-          // Caso o usuario já exista, e esta adquirindo novamente, também altere a senha dele e mande o email com a nova senha
+          
           await supabase.auth.admin.updateUser(existingUser.auth_id, { password: tempPassword });
-          //await sendEmail(customerEmail, 'Bem-vindo de volta!', `Sua nova senha é: ${tempPassword}`);
+
+          await sendEmail(
+            customerEmail,
+            'Nova senha gerada',
+            `Olá ${existingUser.nome},\n\nSua nova senha é: ${tempPassword}\n\nRecomendamos alterá-la após o login.`
+          );
+
           userId = existingUser.id;
         }
-        
+
         // Criar assinatura
         await supabase.from('subscriptions').insert([{
           user_id: userId,
