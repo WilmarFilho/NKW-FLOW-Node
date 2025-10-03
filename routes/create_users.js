@@ -1,14 +1,16 @@
 const express = require('express');
 const router = express.Router();
+const Stripe = require('stripe');
 const { createClient } = require('@supabase/supabase-js');
 require('dotenv').config();
 
 const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_KEY);
+const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
 
 // 🔒 Função para padronizar erros
 const sendError = (res, statusCode, message) => res.status(statusCode).json({ message });
 
-// 🔒 Middleware para validar API_KEY interna (somente admins internos)
+// 🔒 Middleware para validar API_KEY interna
 const checkInternalKey = (req) => {
   const authHeader = req.headers['authorization'] || '';
   if (!authHeader.startsWith('Bearer ')) return false;
@@ -18,9 +20,7 @@ const checkInternalKey = (req) => {
 
 // 🔒 Middleware para validar token JWT do Supabase (admins)
 const checkAdminJWT = async (req) => {
-
   const admin_id = req.authId;
-
   const { data: dbUser } = await supabase
     .from('users')
     .select('tipo_de_usuario')
@@ -31,7 +31,9 @@ const checkAdminJWT = async (req) => {
   return dbUser;
 };
 
-// 🔑 Rota para criar usuários
+/**
+ * 🟢 Criação manual de usuários
+ */
 router.post('/', async (req, res) => {
   try {
     const {
@@ -56,7 +58,6 @@ router.post('/', async (req, res) => {
       notificacao_novo_chat = false
     } = req.body;
 
-    // 🔒 Verificação de segurança
     if (tipo_de_usuario === 'admin') {
       if (!checkInternalKey(req)) {
         return sendError(res, 403, 'Somente chamadas internas podem criar admins.');
@@ -70,17 +71,16 @@ router.post('/', async (req, res) => {
       return sendError(res, 400, 'Tipo de usuário inválido.');
     }
 
-    // 1️⃣ Criar usuário no Supabase Auth
+    // Criar usuário no Supabase Auth
     const { data: authUser, error: authError } = await supabase.auth.admin.createUser({
       email,
       password,
       user_metadata: { tipo: tipo_de_usuario },
       email_confirm: true,
     });
-
     if (authError) return sendError(res, 400, authError.message);
 
-    // 2️⃣ Criar usuário na tabela users
+    // Criar usuário na tabela users
     const { data: userData, error: userError } = await supabase
       .from('users')
       .insert([{
@@ -108,16 +108,130 @@ router.post('/', async (req, res) => {
       .single();
 
     if (userError) {
-      // rollback no Supabase Auth
-      await supabase.auth.admin.deleteUser(authUser.user.id);
+      await supabase.auth.admin.deleteUser(authUser.user.id); // rollback
       return sendError(res, 400, userError.message);
     }
 
     res.status(201).json({ message: 'Usuário criado com sucesso.', authUser, userData });
 
   } catch (err) {
-    console.error('Erro inesperado ao criar usuário:', err);
+    console.error('Erro inesperado ao criar usuário manual:', err);
     return sendError(res, 500, 'Erro interno no servidor.');
+  }
+});
+
+/**
+ * 🟢 Webhook da Stripe - Criação Automática
+ */
+router.post('/webhook', express.raw({ type: 'application/json' }), async (req, res) => {
+  const sig = req.headers['stripe-signature'];
+  let event;
+
+  try {
+    event = stripe.webhooks.constructEvent(req.body, sig, process.env.STRIPE_WEBHOOK_SECRET);
+  } catch (err) {
+    console.error('⚠️ Erro de assinatura do webhook:', err.message);
+    return res.status(400).send(`Webhook Error: ${err.message}`);
+  }
+
+  try {
+    switch (event.type) {
+      case 'checkout.session.completed': {
+        const session = event.data.object;
+        const customerEmail = session.customer_details.email;
+        const plan = session.metadata.plan;
+
+        // Verifica se usuário já existe
+        const { data: existingUser } = await supabase
+          .from('users')
+          .select('*')
+          .eq('email', customerEmail)
+          .single();
+
+        let userId;
+        if (!existingUser) {
+          const { data: authUser, error: authError } = await supabase.auth.admin.createUser({
+            email: customerEmail,
+            password: Math.random().toString(36).slice(-10),
+            email_confirm: true,
+          });
+          if (authError) throw new Error(authError.message);
+
+          const { data: userData, error: userError } = await supabase
+            .from('users')
+            .insert([{
+              auth_id: authUser.user.id,
+              email: customerEmail,
+              nome: session.customer_details.name || 'Novo Usuário',
+              tipo_de_usuario: 'admin',
+            }])
+            .select()
+            .single();
+
+          if (userError) throw new Error(userError.message);
+          userId = userData.id;
+        } else {
+          userId = existingUser.id;
+        }
+
+        // Criar assinatura
+        await supabase.from('subscriptions').insert([{
+          user_id: userId,
+          stripe_subscription_id: session.subscription,
+          stripe_customer_id: session.customer,
+          plan,
+          status: 'active',
+          start_date: new Date(),
+        }]);
+
+        break;
+      }
+
+      case 'invoice.payment_failed': {
+        const invoice = event.data.object;
+        const subscriptionId = invoice.subscription;
+
+        // Marca como "past_due" e agenda cancelamento para 7 dias
+        const cancelDate = new Date();
+        cancelDate.setDate(cancelDate.getDate() + 7);
+
+        await supabase.from('subscriptions')
+          .update({
+            status: 'past_due',
+            cancel_at: cancelDate,
+          })
+          .eq('stripe_subscription_id', subscriptionId);
+
+        break;
+      }
+
+      case 'customer.subscription.deleted': {
+        const subscription = event.data.object;
+        await supabase.from('subscriptions')
+          .update({ status: 'canceled' })
+          .eq('stripe_subscription_id', subscription.id);
+        break;
+      }
+
+      case 'customer.subscription.updated': {
+        const subscription = event.data.object;
+        await supabase.from('subscriptions')
+          .update({
+            status: subscription.status,
+            cancel_at: subscription.cancel_at ? new Date(subscription.cancel_at * 1000) : null,
+          })
+          .eq('stripe_subscription_id', subscription.id);
+        break;
+      }
+
+      default:
+        console.log(`Unhandled event type ${event.type}`);
+    }
+
+    res.json({ received: true });
+  } catch (err) {
+    console.error('❌ Erro no processamento do webhook:', err);
+    res.status(500).send('Internal webhook error');
   }
 });
 
