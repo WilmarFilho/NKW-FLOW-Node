@@ -140,7 +140,11 @@ router.post('/webhook', express.raw({ type: 'application/json' }), async (req, r
         const session = event.data.object;
         const customerEmail = session.customer_details.email;
         const plan = session.metadata.plan;
-
+        const nome = session.customer_details.name || 'Novo Usuário';
+        const cidade = session.customer_details.address?.city || null;
+        const endereco = session.customer_details.address?.line1 || null;
+        const tipo_de_usuario = 'admin';
+    
         // Verifica se usuário já existe
         const { data: existingUser } = await supabase
           .from('users')
@@ -148,22 +152,33 @@ router.post('/webhook', express.raw({ type: 'application/json' }), async (req, r
           .eq('email', customerEmail)
           .single();
 
+        // Mandar email para o email do novo usuário com a senha temporária e dados de login
+        if (!existingUser) {
+          console.log('Enviando email para:', customerEmail);
+          const tempPassword = Math.random().toString(36).slice(-10);
+          //await sendEmail(customerEmail, 'Bem-vindo!', `Sua senha temporária é: ${tempPassword}`);
+        }
+
         let userId;
         if (!existingUser) {
           const { data: authUser, error: authError } = await supabase.auth.admin.createUser({
             email: customerEmail,
-            password: Math.random().toString(36).slice(-10),
+            password: tempPassword,
             email_confirm: true,
           });
           if (authError) throw new Error(authError.message);
+
+          console.log(email, tempPassword, authUser.user.id, session.customer_details.name);
 
           const { data: userData, error: userError } = await supabase
             .from('users')
             .insert([{
               auth_id: authUser.user.id,
               email: customerEmail,
-              nome: session.customer_details.name || 'Novo Usuário',
-              tipo_de_usuario: 'admin',
+              nome,
+              endereco,
+              cidade,
+              tipo_de_usuario,
             }])
             .select()
             .single();
@@ -171,8 +186,14 @@ router.post('/webhook', express.raw({ type: 'application/json' }), async (req, r
           if (userError) throw new Error(userError.message);
           userId = userData.id;
         } else {
+          // Caso o usuario já exista, e esta adquirindo novamente, também altere a senha dele e mande o email com a nova senha
+          const tempPassword = Math.random().toString(36).slice(-10);
+          await supabase.auth.admin.updateUser(existingUser.auth_id, { password: tempPassword });
+          //await sendEmail(customerEmail, 'Bem-vindo de volta!', `Sua nova senha é: ${tempPassword}`);
           userId = existingUser.id;
         }
+
+        console.log(`userId: ${userId}, plano: ${plan}  | subscription: ${session.subscription} | customer: ${session.customer} `);
 
         // Criar assinatura
         await supabase.from('subscriptions').insert([{
@@ -214,6 +235,7 @@ router.post('/webhook', express.raw({ type: 'application/json' }), async (req, r
       }
 
       case 'customer.subscription.updated': {
+        console.log('ooi')
         const subscription = event.data.object;
         await supabase.from('subscriptions')
           .update({
@@ -225,7 +247,7 @@ router.post('/webhook', express.raw({ type: 'application/json' }), async (req, r
       }
 
       default:
-        console.log(`Unhandled event type ${event.type}`);
+        console.log(`Evento Ignorado: ${event.type}`);
     }
 
     res.json({ received: true });
