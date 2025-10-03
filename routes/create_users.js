@@ -145,18 +145,12 @@ router.post('/webhook', express.raw({ type: 'application/json' }), async (req, r
         const tipo_de_usuario = 'admin';
         const tempPassword = Math.random().toString(36).slice(-10);
 
-        // 🔹 Identifica o plano e período pelo price_id
-        console.log('Session completed:', session);
-        console.log('Metadata:', session.metadata.price_id, session.metadata);
-
-
         // 🔹 Recupera subscription no Stripe para pegar o price_id
         const subscription = await stripe.subscriptions.retrieve(session.subscription, {
           expand: ['items.data.price'],
         });
 
         const priceId = subscription.items.data[0].price.id;
-        console.log("🔑 Price ID:", priceId);
 
         let plano;
         let periodo;
@@ -191,8 +185,6 @@ router.post('/webhook', express.raw({ type: 'application/json' }), async (req, r
           });
           if (authError) throw new Error(authError.message);
 
-          console.log(customerEmail, tempPassword, authUser.user.id, session.customer_details.name);
-
           const { data: userData, error: userError } = await supabase
             .from('users')
             .insert([{
@@ -208,7 +200,6 @@ router.post('/webhook', express.raw({ type: 'application/json' }), async (req, r
 
           if (userError) throw new Error(userError.message);
 
-          console.log('Enviando email para:', customerEmail);
           //await sendEmail(customerEmail, 'Bem-vindo!', `Sua senha temporária é: ${tempPassword}`);
 
           userId = userData.id;
@@ -218,9 +209,7 @@ router.post('/webhook', express.raw({ type: 'application/json' }), async (req, r
           //await sendEmail(customerEmail, 'Bem-vindo de volta!', `Sua nova senha é: ${tempPassword}`);
           userId = existingUser.id;
         }
-
-        console.log(`userId: ${userId}, plano: ${plan}  | subscription: ${session.subscription} | customer: ${session.customer} `);
-
+        
         // Criar assinatura
         await supabase.from('subscriptions').insert([{
           user_id: userId,
@@ -236,6 +225,7 @@ router.post('/webhook', express.raw({ type: 'application/json' }), async (req, r
       }
 
       case 'invoice.payment_failed': {
+        console.log('invoice.payment_failed event received');
         const invoice = event.data.object;
         const subscriptionId = invoice.subscription;
 
@@ -254,6 +244,7 @@ router.post('/webhook', express.raw({ type: 'application/json' }), async (req, r
       }
 
       case 'customer.subscription.deleted': {
+        console.log('customer.subscription.deleted event received');
         const subscription = event.data.object;
         await supabase.from('subscriptions')
           .update({ status: 'canceled' })
@@ -262,7 +253,7 @@ router.post('/webhook', express.raw({ type: 'application/json' }), async (req, r
       }
 
       case 'customer.subscription.updated': {
-        console.log('ooi')
+        console.log('customer.subscription.updated event received');
         const subscription = event.data.object;
         await supabase.from('subscriptions')
           .update({
