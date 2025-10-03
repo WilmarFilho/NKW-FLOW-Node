@@ -10,7 +10,7 @@ const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_KEY
 // --- LISTA CHATS COM PAGINAÇÃO E FILTROS ---
 router.get('/', authMiddleware, async (req, res) => {
   const {
-    limit = 20,
+    limit = 10,
     cursor,
     status,
     owner,
