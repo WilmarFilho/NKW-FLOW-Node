@@ -148,7 +148,15 @@ router.post('/webhook', express.raw({ type: 'application/json' }), async (req, r
         // 🔹 Identifica o plano e período pelo price_id
         console.log('Session completed:', session);
         console.log('Metadata:', session.metadata.price_id, session.metadata);
-        const priceId = session.metadata.price_id || session.subscription_items?.[0]?.price?.id;
+
+
+        // 🔹 Recupera subscription no Stripe para pegar o price_id
+        const subscription = await stripe.subscriptions.retrieve(session.subscription, {
+          expand: ['items.data.price'],
+        });
+
+        const priceId = subscription.items.data[0].price.id;
+        console.log("🔑 Price ID:", priceId);
 
         let plano;
         let periodo;
