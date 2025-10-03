@@ -146,6 +146,8 @@ router.post('/webhook', express.raw({ type: 'application/json' }), async (req, r
         const tempPassword = Math.random().toString(36).slice(-10);
 
         // 🔹 Identifica o plano e período pelo price_id
+        console.log('Session completed:', session);
+        console.log('Metadata:', session.metadata.price_id, session.metadata);
         const priceId = session.metadata.price_id || session.subscription_items?.[0]?.price?.id;
 
         let plano;
