@@ -211,7 +211,7 @@ router.post('/webhook', express.raw({ type: 'application/json' }), async (req, r
 
           userId = userData.id;
         } else {
-          
+
           await supabase.auth.admin.updateUser(existingUser.auth_id, { password: tempPassword });
 
           await sendEmail(
@@ -246,34 +246,95 @@ router.post('/webhook', express.raw({ type: 'application/json' }), async (req, r
         const cancelDate = new Date();
         cancelDate.setDate(cancelDate.getDate() + 7);
 
-        await supabase.from('subscriptions')
+        const { data: sub } = await supabase
+          .from('subscriptions')
           .update({
             status: 'past_due',
             cancel_at: cancelDate,
           })
-          .eq('stripe_subscription_id', subscriptionId);
+          .eq('stripe_subscription_id', subscriptionId)
+          .select('user_id')
+          .single();
 
+        if (sub?.user_id) {
+          const { data: user } = await supabase
+            .from('users')
+            .select('email, nome')
+            .eq('id', sub.user_id)
+            .single();
+
+          if (user) {
+            await sendEmail(
+              user.email,
+              'Falha no pagamento',
+              `Olá ${user.nome},\n\nIdentificamos uma falha no pagamento da sua assinatura. 
+Sua assinatura entrará em período de carência e será cancelada em 7 dias se o pagamento não for regularizado.\n\nAtenciosamente,\nEquipe`
+            );
+          }
+        }
         break;
       }
 
       case 'customer.subscription.deleted': {
         console.log('customer.subscription.deleted event received');
         const subscription = event.data.object;
-        await supabase.from('subscriptions')
-          .update({ status: 'canceled' })
-          .eq('stripe_subscription_id', subscription.id);
+
+        const { data: sub } = await supabase
+          .from('subscriptions')
+          .update({ status: 'canceled', ended_at: new Date() })
+          .eq('stripe_subscription_id', subscription.id)
+          .select('user_id')
+          .single();
+
+        if (sub?.user_id) {
+          const { data: user } = await supabase
+            .from('users')
+            .select('email, nome')
+            .eq('id', sub.user_id)
+            .single();
+
+          if (user) {
+            await sendEmail(
+              user.email,
+              'Assinatura cancelada',
+              `Olá ${user.nome},\n\nSua assinatura foi cancelada e não será mais cobrada. 
+Se foi um engano, você pode reativar seu plano a qualquer momento pelo painel.\n\nAtenciosamente,\nEquipe`
+            );
+          }
+        }
         break;
       }
 
       case 'customer.subscription.updated': {
         console.log('customer.subscription.updated event received');
         const subscription = event.data.object;
-        await supabase.from('subscriptions')
+
+        const { data: sub } = await supabase
+          .from('subscriptions')
           .update({
             status: subscription.status,
             cancel_at: subscription.cancel_at ? new Date(subscription.cancel_at * 1000) : null,
           })
-          .eq('stripe_subscription_id', subscription.id);
+          .eq('stripe_subscription_id', subscription.id)
+          .select('user_id')
+          .single();
+
+        if (sub?.user_id) {
+          const { data: user } = await supabase
+            .from('users')
+            .select('email, nome')
+            .eq('id', sub.user_id)
+            .single();
+
+          if (user) {
+            await sendEmail(
+              user.email,
+              'Alteração na assinatura',
+              `Olá ${user.nome},\n\nSua assinatura foi atualizada. 
+Status atual: ${subscription.status.toUpperCase()}.\n\nSe não reconhece essa mudança, entre em contato com o suporte.\n\nAtenciosamente,\nEquipe`
+            );
+          }
+        }
         break;
       }
 

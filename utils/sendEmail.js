@@ -17,7 +17,6 @@ async function sendEmail(to, subject, text) {
       text,
     };
     await sgMail.send(msg);
-    console.log(`📧 Email enviado para ${to}`);
   } catch (err) {
     console.error('❌ Erro ao enviar e-mail:', err.response?.body || err.message);
   }
