@@ -191,7 +191,7 @@ router.post('/webhook', express.raw({ type: 'application/json' }), async (req, r
           });
           if (authError) throw new Error(authError.message);
 
-          console.log(email, tempPassword, authUser.user.id, session.customer_details.name);
+          console.log(customerEmail, tempPassword, authUser.user.id, session.customer_details.name);
 
           const { data: userData, error: userError } = await supabase
             .from('users')
