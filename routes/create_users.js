@@ -143,6 +143,7 @@ router.post('/webhook', express.raw({ type: 'application/json' }), async (req, r
         const cidade = session.customer_details.address?.city || null;
         const endereco = session.customer_details.address?.line1 || null;
         const tipo_de_usuario = 'admin';
+        const tempPassword = Math.random().toString(36).slice(-10);
 
         // 🔹 Identifica o plano e período pelo price_id
         const priceId = session.metadata.price_id || session.subscription_items?.[0]?.price?.id;
@@ -170,14 +171,8 @@ router.post('/webhook', express.raw({ type: 'application/json' }), async (req, r
           .eq('email', customerEmail)
           .single();
 
-        // Mandar email para o email do novo usuário com a senha temporária e dados de login
-        if (!existingUser) {
-          console.log('Enviando email para:', customerEmail);
-          const tempPassword = Math.random().toString(36).slice(-10);
-          //await sendEmail(customerEmail, 'Bem-vindo!', `Sua senha temporária é: ${tempPassword}`);
-        }
-
         let userId;
+
         if (!existingUser) {
           const { data: authUser, error: authError } = await supabase.auth.admin.createUser({
             email: customerEmail,
@@ -202,10 +197,13 @@ router.post('/webhook', express.raw({ type: 'application/json' }), async (req, r
             .single();
 
           if (userError) throw new Error(userError.message);
+
+          console.log('Enviando email para:', customerEmail);
+          //await sendEmail(customerEmail, 'Bem-vindo!', `Sua senha temporária é: ${tempPassword}`);
+
           userId = userData.id;
         } else {
           // Caso o usuario já exista, e esta adquirindo novamente, também altere a senha dele e mande o email com a nova senha
-          const tempPassword = Math.random().toString(36).slice(-10);
           await supabase.auth.admin.updateUser(existingUser.auth_id, { password: tempPassword });
           //await sendEmail(customerEmail, 'Bem-vindo de volta!', `Sua nova senha é: ${tempPassword}`);
           userId = existingUser.id;
