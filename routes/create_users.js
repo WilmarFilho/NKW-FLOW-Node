@@ -266,19 +266,14 @@ router.post('/webhook', express.raw({ type: 'application/json' }), async (req, r
       }
 
       case 'invoice.payment_failed': {
-        console.log('invoice.payment_failed event received');
+
         const invoice = event.data.object;
         const subscriptionId = invoice.subscription;
-
-        // Marca como "past_due" e agenda cancelamento para 7 dias
-        const cancelDate = new Date();
-        cancelDate.setDate(cancelDate.getDate() + 7);
 
         const { data: sub } = await supabase
           .from('subscriptions')
           .update({
             status: 'past_due',
-            cancel_at: cancelDate,
           })
           .eq('stripe_subscription_id', subscriptionId)
           .select('user_id')
@@ -303,66 +298,47 @@ Sua assinatura entrará em período de carência e será cancelada em 7 dias se 
         break;
       }
 
-      case 'customer.subscription.deleted': {
-        console.log('customer.subscription.deleted event received');
-        const subscription = event.data.object;
+      case 'invoice.payment_succeeded': {
+        const invoice = event.data.object;
+        const subscriptionId = invoice.subscription;
 
-        const { data: sub } = await supabase
+        await supabase
           .from('subscriptions')
-          .update({ status: 'canceled', ended_at: new Date() })
-          .eq('stripe_subscription_id', subscription.id)
-          .select('user_id')
-          .single();
+          .update({ status: 'active', updated_at: new Date() })
+          .eq('stripe_subscription_id', subscriptionId);
 
-        if (sub?.user_id) {
-          const { data: user } = await supabase
-            .from('users')
-            .select('email, nome')
-            .eq('id', sub.user_id)
-            .single();
-
-          if (user) {
-            await sendEmail(
-              user.email,
-              'Assinatura cancelada',
-              `Olá ${user.nome},\n\nSua assinatura foi cancelada e não será mais cobrada. 
-Se foi um engano, você pode reativar seu plano a qualquer momento pelo painel.\n\nAtenciosamente,\nEquipe`
-            );
-          }
-        }
         break;
       }
 
-      case 'customer.subscription.updated': {
-        console.log('customer.subscription.updated event received');
+      case 'customer.subscription.deleted': {
         const subscription = event.data.object;
 
+        // Busca a assinatura e o usuário associado
         const { data: sub } = await supabase
           .from('subscriptions')
-          .update({
-            status: subscription.status,
-            cancel_at: subscription.cancel_at ? new Date(subscription.cancel_at * 1000) : null,
-          })
-          .eq('stripe_subscription_id', subscription.id)
           .select('user_id')
+          .eq('stripe_subscription_id', subscription.id)
           .single();
 
         if (sub?.user_id) {
-          const { data: user } = await supabase
-            .from('users')
-            .select('email, nome')
-            .eq('id', sub.user_id)
-            .single();
+          const { data: user } = await supabase.from('users').select('auth_id, email, nome').eq('id', sub.user_id).single();
 
           if (user) {
+            // Remove assinatura
+            await supabase.from('subscriptions').delete().eq('stripe_subscription_id', subscription.id);
+            // Remove usuário
+            await supabase.from('users').delete().eq('id', sub.user_id);
+            // Remove autenticação
+            await supabase.auth.admin.deleteUser(user.auth_id);
+
             await sendEmail(
               user.email,
-              'Alteração na assinatura',
-              `Olá ${user.nome},\n\nSua assinatura foi atualizada. 
-Status atual: ${subscription.status.toUpperCase()}.\n\nSe não reconhece essa mudança, entre em contato com o suporte.\n\nAtenciosamente,\nEquipe`
+              'Assinatura cancelada',
+              `Olá ${user.nome},\n\nSua assinatura foi cancelada e seus dados foram removidos conforme nossa política de privacidade.`
             );
           }
         }
+
         break;
       }
 

@@ -50,6 +50,15 @@ router.get('/', authMiddleware, async (req, res) => {
     if (!user) return res.status(404).json({ message: 'Usuário não encontrado' });
     if (userError) return sendError(res, 500, userError.message);
 
+    // Busca plano na tabela subscription pelo user_id
+    const { data: subscription, error: subscriptionError } = await supabase
+      .from('subscriptions')
+      .select('plano, status')
+      .eq('user_id', user.id)
+      .maybeSingle();
+
+    if (subscriptionError) return sendError(res, 500, subscriptionError.message);
+
     // Se for atendente, busca sua conexão
     if (user.tipo_de_usuario === 'atendente') {
       const { data: attendant, error: attendantError } = await supabase
@@ -74,11 +83,13 @@ router.get('/', authMiddleware, async (req, res) => {
           connection_id: connection?.id,
           connection_nome: connection?.nome,
           user_admin_id: attendant.user_admin_id,
+          plano: subscription?.plano,
+          subscription_status: subscription?.status
         });
       }
     }
 
-    return res.json({ ...user, role: 'admin' });
+    return res.json({ ...user, role: 'admin', plano: subscription?.plano, subscription_status: subscription?.status });
   } catch (err) {
     console.error('Erro inesperado ao buscar usuário:', err);
     return sendError(res, 500, err.message);
