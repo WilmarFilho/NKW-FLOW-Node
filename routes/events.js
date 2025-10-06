@@ -282,14 +282,7 @@ router.post('/dispatch', async (req, res) => {
         let contatoNumero = rjid.replaceAll('@s.whatsapp.net', '');
 
         if (contatoNumero.endsWith('@lid')) {
-            const { wuid } = await buscarDadosContato(contatoNumero, connection);
-            contatoNumero = wuid;
-            console.log(contatoNumero);
-            if(contatoNumero.endsWith('@lid')) {
-                enrichedEvent.event = 'error';
-                enrichedEvent.message = 'Número inválido, termina com @lid';
-                return res.status(400).json(enrichedEvent);
-            }
+            contatoNumero = data?.key?.senderPn.replaceAll('@s.whatsapp.net', '');
         }
 
         const connectionId = fullConnection.id;
