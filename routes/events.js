@@ -285,6 +285,11 @@ router.post('/dispatch', async (req, res) => {
             contatoNumero = data?.key?.senderPn.replaceAll('@s.whatsapp.net', '');
         }
 
+        // Remove sufixo do tipo ":63" se existir (ex: 556492954044:63 -> 556492954044)
+        if (/^\d+:\d+$/.test(contatoNumero)) {
+            contatoNumero = contatoNumero.split(':')[0];
+        }
+
         const connectionId = fullConnection.id;
 
         let chatId = null;

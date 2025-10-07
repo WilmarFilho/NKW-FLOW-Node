@@ -1,4 +1,5 @@
 const express = require('express');
+const jwt = require('jsonwebtoken');
 const router = express.Router();
 const Stripe = require('stripe');
 const { createClient } = require('@supabase/supabase-js');
@@ -16,16 +17,32 @@ const checkInternalKey = (req) => {
   const authHeader = req.headers['authorization'] || '';
   if (!authHeader.startsWith('Bearer ')) return false;
   const apiKey = authHeader.split(' ')[1];
+
   return apiKey === process.env.INTERNAL_API_KEY;
 };
 
 // 🔒 Middleware para validar token JWT do Supabase (admins)
 const checkAdminJWT = async (req) => {
-  const admin_id = req.authId;
+
+  const authHeader = req.headers['authorization'];
+
+  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    return res.status(401).json({ error: 'Token não fornecido ou inválido.' });
+  }
+
+  const token = authHeader.split(' ')[1];
+  if (!token) return res.status(401).json({ error: 'Token inválido.' });
+
+  // Decodifica apenas o payload, sem verificar assinatura
+  const payload = jwt.decode(token);
+  const tokenAuthId = payload?.sub; // sub = auth_id do Supabase
+
+  if (!tokenAuthId) return res.status(401).json({ error: 'Token inválido.' });
+
   const { data: dbUser } = await supabase
     .from('users')
     .select('tipo_de_usuario')
-    .eq('auth_id', admin_id)
+    .eq('auth_id', tokenAuthId)
     .single();
 
   if (!dbUser || dbUser.tipo_de_usuario !== 'admin') return null;
@@ -35,7 +52,8 @@ const checkAdminJWT = async (req) => {
 /**
  * 🟢 Criação manual de usuários
  */
-router.post('/', async (req, res) => {
+router.post('/', express.json({ limit: '250mb' }), async (req, res) => {
+
   try {
     const {
       email,
@@ -58,6 +76,8 @@ router.post('/', async (req, res) => {
       notificacao_necessidade_de_entrar_conversa = false,
       notificacao_novo_chat = false
     } = req.body;
+
+
 
     if (tipo_de_usuario === 'admin') {
       if (!checkInternalKey(req)) {
