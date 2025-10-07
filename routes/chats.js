@@ -10,8 +10,8 @@ const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_KEY
 const Redis = require('ioredis');
 
 const redis = new Redis({
-  host: process.env.REDIS_HOST,
-  port: process.env.REDIS_PORT,
+  host: process.env.REDIS_HOST || 'redis',
+  port: process.env.REDIS_PORT || 6379,
 });
 
 // --- LISTA CHATS COM PAGINAÇÃO (8 em 8) E 8 MENSAGENS RECENTES ---
