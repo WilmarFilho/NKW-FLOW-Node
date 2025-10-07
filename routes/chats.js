@@ -7,114 +7,190 @@ require('dotenv').config();
 
 const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_KEY);
 
-// --- LISTA CHATS COM PAGINAÇÃO E FILTROS ---
-router.get('/', authMiddleware, async (req, res) => {
+const Redis = require('ioredis');
+
+const redis = new Redis({
+  host: process.env.REDIS_HOST,
+  port: process.env.REDIS_PORT,
+});
+
+// --- LISTA CHATS COM PAGINAÇÃO (8 em 8) E 8 MENSAGENS RECENTES ---
+router.get("/", authMiddleware, async (req, res) => {
   const {
-    limit = 10,
+    limit = 8, // 👈 chats por página
     cursor,
-    status,
-    owner,
+    status = "Open",
+    owner = "all",
     search,
-    iaStatus,
+    iaStatus = "todos",
     connection_id,
     attendant_id,
   } = req.query;
 
   const user_id = req.userId;
   const auth_id = req.authId;
-
-  if (!user_id) return res.status(400).json({ error: 'User ID é obrigatório.' });
+  if (!user_id) return res.status(400).json({ error: "User ID é obrigatório." });
 
   try {
-    // 1) Pega attendant do usuário autenticado
-    const { data: attendant, error: attendantError } = await supabase
-      .from('attendants')
-      .select('user_admin_id, connection_id')
-      .eq('user_id', auth_id)
+    // 🔹 Cache Redis
+
+    // Monta cacheKey incluindo todos os filtros relevantes
+    const cacheKey = [
+      "chats",
+      user_id,
+      cursor || "0",
+      status,
+      owner,
+      search || "",
+      iaStatus,
+      connection_id || "all",
+      attendant_id || "all"
+    ].join(":");
+
+    const cached = await redis.get(cacheKey);
+
+    if (cached) {
+      return res.json(JSON.parse(cached));
+    }
+
+    // 1️⃣ Pega attendant e conexões permitidas
+    const { data: attendant } = await supabase
+      .from("attendants")
+      .select("user_admin_id, connection_id")
+      .eq("user_id", auth_id)
       .maybeSingle();
 
-    if (attendantError) throw attendantError;
-
-    // 2) Se foi passado attendant_id no filtro, busca a connection dele
     let attendantFilter = null;
     if (attendant_id) {
-      const { data, error } = await supabase
-        .from('attendants')
-        .select('connection_id')
-        .eq('user_id', attendant_id)
+      const { data } = await supabase
+        .from("attendants")
+        .select("connection_id")
+        .eq("user_id", attendant_id)
         .maybeSingle();
-
-      if (error) throw error;
       attendantFilter = data;
     }
 
-    let query = supabase.from('connections').select('id');
-
+    let query = supabase.from("connections").select("id");
     if (connection_id) {
-      // 1) connection_id no query param
-      const ids = connection_id.split(',').map(id => id.trim());
-      query = query.in('id', ids);
-
-    } else if (attendantFilter && attendantFilter.connection_id) {
-      // 2) attendantFilter
-      query = query.eq('id', attendantFilter.connection_id);
-
-    } else if (attendant && attendant.connection_id) {
-      // 3) attendant autenticado
-      query = query.eq('id', attendant.connection_id);
-
+      query = query.in("id", connection_id.split(",").map((i) => i.trim()));
+    } else if (attendantFilter?.connection_id) {
+      query = query.eq("id", attendantFilter.connection_id);
+    } else if (attendant?.connection_id) {
+      query = query.eq("id", attendant.connection_id);
     } else {
-      // 4) fallback: user_id dono
-      query = query.eq('user_id', user_id);
+      query = query.eq("user_id", user_id);
     }
 
     const { data: conexoes } = await query;
+    if (!conexoes?.length) return res.json({ chats: [], nextCursor: null });
+    const connectionIds = conexoes.map((c) => c.id);
 
-    if (!conexoes || conexoes.length === 0) {
-      return res.json({ chats: [], nextCursor: null });
+    // 2️⃣ Buscar 8 chats com filtros
+    let chatQuery = supabase
+      .from("chats")
+      .select("id, contato_nome, contato_numero, connection_id, user_id, ia_ativa, ia_desligada_em, foto_perfil, status, ultima_atualizacao")
+      .in("connection_id", connectionIds)
+      .order("ultima_atualizacao", { ascending: false })
+      .limit(limit);
+
+    if (cursor) {
+      const decodedCursor = Buffer.from(cursor, "base64").toString("utf8");
+      chatQuery = chatQuery.lt("ultima_atualizacao", decodedCursor);
     }
 
-    const connectionIds = conexoes.map(c => c.id);
+    if (owner === "mine") chatQuery = chatQuery.eq("user_id", user_id);
+    if (status) chatQuery = chatQuery.eq("status", status);
+    if (search) chatQuery = chatQuery.ilike("contato_nome", `%${search}%`);
+    if (iaStatus === "ativa") chatQuery = chatQuery.eq("ia_ativa", true);
+    if (iaStatus === "desativada") chatQuery = chatQuery.or("ia_ativa.is.false,ia_ativa.is.null");
 
-    // 4) Agora apenas UMA chamada à RPC
-    const { data: chats, error } = await supabase.rpc('chats_com_ultima_mensagem', {
-      p_limit: limit,
-      p_cursor: cursor ? Buffer.from(cursor, 'base64').toString('utf8') : null,
-      p_search: search || null,
-      p_status: status || 'Open',
-      p_owner: owner || 'all',
-      p_user_id: owner === 'mine' ? user_id : null,
-      p_ia_status: iaStatus || 'todos',
-      p_attendant_id: attendant_id || null,
-      p_connection_ids: connectionIds
-    });
+    const { data: chats, error: chatError } = await chatQuery;
+    if (chatError) throw chatError;
+    if (!chats?.length) return res.json({ chats: [], nextCursor: null });
 
-    if (error) throw error;
+    const chatIds = chats.map((c) => c.id);
+    const donoIds = [...new Set(chats.map((c) => c.user_id).filter(Boolean))];
 
-    // 5) Enriquecer com nome do dono
-    const donoIds = [...new Set(chats.map(c => c.user_id).filter(Boolean))];
-    let donos = [];
-    if (donoIds.length > 0) {
-      const { data } = await supabase.from('users').select('id, nome').in('id', donoIds);
-      donos = data;
+    // 3️⃣ Buscar dados complementares em paralelo
+    const [users, messages, reads] = await Promise.all([
+      donoIds.length
+        ? supabase.from("users").select("id, nome").in("id", donoIds)
+        : { data: [] },
+      supabase
+        .from("messages")
+        .select("id, chat_id, mensagem, mimetype, criado_em, remetente")
+        .in("chat_id", chatIds)
+        .order("criado_em", { ascending: false })
+        .limit(10 * chatIds.length), // 👈 até 10 mensagens por chat
+      supabase
+        .from("chats_reads")
+        .select("chat_id, connection_id, last_read_at")
+        .in("chat_id", chatIds)
+        .in("connection_id", connectionIds)
+    ]);
+
+    // 4️⃣ Agrupar 10 mensagens por chat
+    const mensagensPorChat = {};
+    for (const msg of messages.data || []) {
+      if (!mensagensPorChat[msg.chat_id]) mensagensPorChat[msg.chat_id] = [];
+      if (mensagensPorChat[msg.chat_id].length < 8) {
+        mensagensPorChat[msg.chat_id].push(msg);
+      }
     }
 
-    const chatsComDono = chats.map(chat => {
-      const dono = donos.find(d => d.id === chat.user_id);
-      return { ...chat, user_nome: dono ? dono.nome : null };
+    // 5️⃣ Agrupar last_read_at por chat_id+connection_id
+    const lastReadMap = {};
+    for (const read of reads.data || []) {
+      lastReadMap[`${read.chat_id}:${read.connection_id}`] = read.last_read_at;
+    }
+
+    // 6️⃣ Montar payload final
+    const chatsCompletos = chats.map((chat) => {
+      const dono = users.data?.find((d) => d.id === chat.user_id);
+      const msgs = mensagensPorChat[chat.id] || [];
+
+      // Busca o last_read_at para este chat e connection
+      const lastReadAt = lastReadMap[`${chat.id}:${chat.connection_id}`];
+
+      // Conta quantas mensagens do contato são posteriores ao last_read_at
+      let unread_count = 0;
+      if (lastReadAt) {
+        unread_count = msgs.filter(
+          (m) =>
+            m.remetente === "Contato" &&
+            (!m.criado_em || new Date(m.criado_em) > new Date(lastReadAt))
+        ).length;
+      } else {
+        unread_count = msgs.filter((m) => m.remetente === "Contato").length;
+      }
+
+      return {
+        ...chat,
+        ultima_mensagem: msgs[0]?.mensagem || null,
+        ultima_mensagem_type: msgs[0]?.mimetype || null,
+        mensagem_data: msgs[0]?.criado_em || chat.ultima_atualizacao,
+        unread_count,
+        user_nome: dono?.nome || null,
+        ultimas_mensagens: msgs,
+      };
     });
 
+    // 7️⃣ Calcular cursor para paginação
     let nextCursor = null;
-    if (chatsComDono.length > 0) {
-      const last = chatsComDono[chatsComDono.length - 1];
-      nextCursor = Buffer.from(last.mensagem_data).toString('base64');
+    if (chatsCompletos.length > 0) {
+      const last = chatsCompletos[chatsCompletos.length - 1];
+      nextCursor = Buffer.from(last.mensagem_data || "").toString("base64");
     }
 
-    res.json({ chats: chatsComDono, nextCursor });
+    const result = { chats: chatsCompletos, nextCursor };
 
+    // 8️⃣ Cache no Redis (60s)
+    await redis.setex(cacheKey, 60, JSON.stringify(result));
+
+    res.json(result);
   } catch (err) {
     console.error(err);
-    res.status(500).json({ error: 'Erro interno' });
+    res.status(500).json({ error: "Erro interno no servidor" });
   }
 });
 
