@@ -14,7 +14,7 @@ const redis = new Redis({
   port: process.env.REDIS_PORT || 6379,
 });
 
-// --- LISTA CHATS COM PAGINAÇÃO (8 em 8) E 8 MENSAGENS RECENTES ---
+// --- LISTA CHATS COM PAGINAÇÃO (8 em 8) E PELO MENOS 8 MENSAGENS RECENTES ---
 router.get("/", authMiddleware, async (req, res) => {
   const {
     limit = 8, // 👈 chats por página
@@ -120,8 +120,7 @@ router.get("/", authMiddleware, async (req, res) => {
         .from("messages")
         .select("id, chat_id, mensagem, mimetype, criado_em, remetente")
         .in("chat_id", chatIds)
-        .order("criado_em", { ascending: false })
-        .limit(10 * chatIds.length), // 👈 até 10 mensagens por chat
+        .order("criado_em", { ascending: false }),
       supabase
         .from("chats_reads")
         .select("chat_id, connection_id, last_read_at")
@@ -129,10 +128,16 @@ router.get("/", authMiddleware, async (req, res) => {
         .in("connection_id", connectionIds)
     ]);
 
-    // 4️⃣ Agrupar 10 mensagens por chat
+    // 4️⃣ Agrupar até 8 mensagens recentes por chat
     const mensagensPorChat = {};
+
+    // Primeiro, cria um map de arrays vazios para cada chat
+    for (const chatId of chatIds) {
+      mensagensPorChat[chatId] = [];
+    }
+
+    // Itera sobre as mensagens ordenadas do mais recente para o mais antigo
     for (const msg of messages.data || []) {
-      if (!mensagensPorChat[msg.chat_id]) mensagensPorChat[msg.chat_id] = [];
       if (mensagensPorChat[msg.chat_id].length < 8) {
         mensagensPorChat[msg.chat_id].push(msg);
       }
