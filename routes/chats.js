@@ -189,8 +189,8 @@ router.get("/", authMiddleware, async (req, res) => {
 
     const result = { chats: chatsCompletos, nextCursor };
 
-    // 8️⃣ Cache no Redis (60s)
-    await redis.setex(cacheKey, 60, JSON.stringify(result));
+    // 8️⃣ Cache no Redis (400s)
+    await redis.setex(cacheKey, 400, JSON.stringify(result));
 
     res.json(result);
   } catch (err) {
