@@ -527,6 +527,7 @@ router.post('/dispatch', async (req, res) => {
 
         const redisKeys = await redis.keys(`chats:${userId}:*`);
         const cacheKey = redisKeys.find(k => k.includes(connectionId));
+        console.log('Cache Key encontrada:', cacheKey);
         if (cacheKey) {
             const cached = await redis.get(cacheKey);
             if (cached) {
