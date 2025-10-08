@@ -41,7 +41,7 @@ router.get("/", authMiddleware, async (req, res) => {
       iaStatus === "todos" &&
       status === "Open";
 
-    const cacheKey = `chats:${user_id}:${cursor || "0"}`;
+    const cacheKey = `chats:${user_id}:0`;
 
     if (canCache) {
       const cached = await redis.get(cacheKey);

@@ -540,9 +540,10 @@ router.post('/dispatch', async (req, res) => {
 
         // 🔹 Atualiza cache Redis (incremental)
         try {
-            const redisKeys = await redis.keys(`chats:${userId}:*`);
+            const redisKeys = await redis.keys(`chats:${userId}:0`);
+            
             if (!redisKeys.length) {
-                console.log(`ℹ️ Nenhum cache encontrado para chats:${userId}:*`);
+                console.log(`ℹ️ Nenhum cache encontrado para chats:${userId}:0`);
             }
 
             for (const key of redisKeys) {
