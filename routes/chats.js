@@ -189,8 +189,8 @@ router.get("/", authMiddleware, async (req, res) => {
 
     const result = { chats: chatsCompletos, nextCursor };
 
-    // 8️⃣ Cache no Redis (30s)
-    await redis.setex(cacheKey, 30, JSON.stringify(result));
+    // 8️⃣ Cache no Redis (300s)
+    await redis.setex(cacheKey, 300, JSON.stringify(result));
 
     res.json(result);
   } catch (err) {
@@ -331,5 +331,8 @@ router.put('/:id', authMiddleware, async (req, res) => {
 });
 
 module.exports = router;
+
+
+
 
 

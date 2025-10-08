@@ -7,6 +7,13 @@ const jwt = require("jsonwebtoken");
 
 const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_KEY);
 
+const Redis = require('ioredis');
+
+const redis = new Redis({
+  host: process.env.REDIS_HOST || 'redis',
+  port: process.env.REDIS_PORT || 6379,
+});
+
 const eventClientsByUser = {};
 
 const BUCKET_NAME = "bucket_arquivos_medias";
@@ -516,6 +523,22 @@ router.post('/dispatch', async (req, res) => {
                 mensagem: data.message?.conversation || null,
                 quote_id: quoteId,
             };
+        }
+
+        const redisKeys = await redis.keys(`chats:${userId}:*`);
+        const cacheKey = redisKeys.find(k => k.includes(connectionId));
+        if (cacheKey) {
+            const cached = await redis.get(cacheKey);
+            if (cached) {
+                const parsed = JSON.parse(cached);
+                const chatToUpdate = parsed.chats.find(c => c.id === chatId);
+                if (chatToUpdate) {
+                    chatToUpdate.ultimas_mensagens.unshift(novaMensagem);
+                    chatToUpdate.ultima_mensagem = novaMensagem.mensagem;
+                    chatToUpdate.mensagem_data = novaMensagem.criado_em;
+                }
+                await redis.setex(cacheKey, 300, JSON.stringify(parsed));
+            }
         }
 
         const { data: msgCriada, error: msgError } = await supabase
