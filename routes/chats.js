@@ -118,7 +118,7 @@ router.get("/", authMiddleware, async (req, res) => {
         : { data: [] },
       supabase
         .from("messages")
-        .select("id, chat_id, mensagem, mimetype, criado_em, remetente")
+        .select("id, chat_id, mensagem, mimetype, criado_em, remetente, base64")
         .in("chat_id", chatIds)
         .order("criado_em", { ascending: false }),
       supabase
