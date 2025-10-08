@@ -10,8 +10,8 @@ const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_KEY
 const Redis = require('ioredis');
 
 const redis = new Redis({
-  host: process.env.REDIS_HOST || 'redis',
-  port: process.env.REDIS_PORT || 6379,
+    host: process.env.REDIS_HOST || 'redis',
+    port: process.env.REDIS_PORT || 6379,
 });
 
 const eventClientsByUser = {};
@@ -525,24 +525,6 @@ router.post('/dispatch', async (req, res) => {
             };
         }
 
-        console.log('Nova Mensagem a ser inserida:', novaMensagem);
-        const redisKeys = await redis.keys(`chats:${userId}:*`);
-        const cacheKey = redisKeys.find(k => k.includes(connectionId));
-        console.log('Cache Key encontrada:', cacheKey);
-        if (cacheKey) {
-            const cached = await redis.get(cacheKey);
-            if (cached) {
-                const parsed = JSON.parse(cached);
-                const chatToUpdate = parsed.chats.find(c => c.id === chatId);
-                if (chatToUpdate) {
-                    chatToUpdate.ultimas_mensagens.unshift(novaMensagem);
-                    chatToUpdate.ultima_mensagem = novaMensagem.mensagem;
-                    chatToUpdate.mensagem_data = novaMensagem.criado_em;
-                }
-                await redis.setex(cacheKey, 300, JSON.stringify(parsed));
-            }
-        }
-
         const { data: msgCriada, error: msgError } = await supabase
             .from('messages')
             .insert(novaMensagem)
@@ -555,6 +537,50 @@ router.post('/dispatch', async (req, res) => {
         };
 
         enrichedEvent.chat = chatCompleto || chatExistente;
+
+        // 🔹 Atualiza cache Redis (incremental)
+        try {
+            const redisKeys = await redis.keys(`chats:${userId}:*`);
+            if (!redisKeys.length) {
+                console.log(`ℹ️ Nenhum cache encontrado para chats:${userId}:*`);
+            }
+
+            for (const key of redisKeys) {
+                const cached = await redis.get(key);
+                if (!cached) continue;
+
+                const parsed = JSON.parse(cached);
+                let updated = false;
+
+                for (const chat of parsed.chats || []) {
+                    if (chat.id === chatId) {
+                        chat.ultimas_mensagens = [
+                            { ...msgCriada },
+                            ...(chat.ultimas_mensagens || []).slice(0, 7)
+                        ];
+
+                        chat.ultima_mensagem = msgCriada.mensagem || chat.ultima_mensagem;
+                        chat.ultima_mensagem_type = msgCriada.mimetype || chat.ultima_mensagem_type;
+                        chat.mensagem_data = msgCriada.criado_em || new Date().toISOString();
+                        chat.ultima_atualizacao = new Date().toISOString();
+
+                        // Atualiza contagem de não lidas se for mensagem do contato
+                        if (msgCriada.remetente === "Contato") {
+                            chat.unread_count = (chat.unread_count || 0) + 1;
+                        }
+
+                        updated = true;
+                    }
+                }
+
+                if (updated) {
+                    await redis.set(key, JSON.stringify(parsed)); // usa set normal (mantém TTL)
+                    console.log(`✅ Cache atualizado para ${key}`);
+                }
+            }
+        } catch (err) {
+            console.error("❌ Erro ao atualizar cache Redis:", err);
+        }
     }
 
     if (event === 'messages.delete') {
