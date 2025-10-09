@@ -283,8 +283,6 @@ router.post('/dispatch', async (req, res) => {
 
     if (event === 'messages.upsert' || event === 'send.message') {
 
-        console.log('oi')
-
         const rjid = extractRemoteJid(event, data);
         if (rjid && !/@g\.us$/.test(rjid)) markMessageActivity(connection, rjid);
 
@@ -574,7 +572,6 @@ router.post('/dispatch', async (req, res) => {
 
                 if (updated) {
                     await redis.set(key, JSON.stringify(parsed)); // usa set normal (mantém TTL)
-                    console.log(`✅ Cache Redis atualizado para a chave ${key}`);
                 }
             }
         } catch (err) {
