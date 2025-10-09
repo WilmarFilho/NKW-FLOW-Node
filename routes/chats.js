@@ -34,12 +34,15 @@ router.get("/", authMiddleware, async (req, res) => {
   try {
     // 🔹 Só cacheia se NÃO houver filtros adicionais
     const canCache =
+      !cursor &&
       !search &&
       !connection_id &&
       !attendant_id &&
       owner === "all" &&
       iaStatus === "todos" &&
       status === "Open";
+
+    console.log(cursor, search, connection_id, attendant_id, owner, iaStatus, status);
 
     const cacheKey = `chats:${user_id}:0`;
 
