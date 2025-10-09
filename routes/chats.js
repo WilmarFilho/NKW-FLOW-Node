@@ -199,16 +199,19 @@ router.get('/:id', authMiddleware, async (req, res) => {
   const { id } = req.params;
 
   try {
+    // Busca o chat
     const { data: chat, error } = await supabase
-      .rpc('chat_por_id', { p_chat_id: id })
+      .from('chats')
+      .select(
+        'id, contato_nome, contato_numero, connection_id, user_id, ia_ativa, ia_desligada_em, foto_perfil, status, ultima_atualizacao'
+      )
+      .eq('id', id)
       .maybeSingle();
 
     if (error) throw error;
     if (!chat) return res.status(404).json({ error: 'Chat não encontrado' });
 
-
-
-
+    // Busca dono
     let dono = null;
     if (chat.user_id) {
       const { data: userData, error: userError } = await supabase
@@ -221,7 +224,49 @@ router.get('/:id', authMiddleware, async (req, res) => {
       dono = userData;
     }
 
-    res.json({ ...chat, user_nome: dono ? dono.nome : null });
+    // Busca última mensagem do chat
+    const { data: messages, error: msgError } = await supabase
+      .from('messages')
+      .select('chat_id, mensagem, mimetype')
+      .eq('chat_id', chat.id)
+      .order('criado_em', { ascending: false })
+      .limit(1);
+
+    if (msgError) throw msgError;
+    const ultimaMensagem = messages && messages.length > 0 ? messages[0] : null;
+
+    // Busca último read
+    const { data: reads, error: readError } = await supabase
+      .from('chats_reads')
+      .select('chat_id, connection_id, last_read_at')
+      .eq('chat_id', chat.id);
+
+    if (readError) throw readError;
+
+    // unread_count: só verifica se tem mensagem não lida
+    let unread_count = false;
+    let lastReadAt = reads && reads.length > 0 ? reads[0].last_read_at : null;
+
+    if (ultimaMensagem && ultimaMensagem.mensagem) {
+      if (lastReadAt) {
+        unread_count =
+          ultimaMensagem.remetente === "Contato" &&
+          (!ultimaMensagem.criado_em || new Date(ultimaMensagem.criado_em) > new Date(lastReadAt))
+            ? true
+            : false;
+      } else {
+        unread_count = ultimaMensagem.remetente === "Contato" ? true : false;
+      }
+    }
+
+    const chatCompleto = {
+      ...chat,
+      ultima_mensagem: ultimaMensagem,
+      unread_count,
+      user_nome: dono?.nome || null,
+    };
+
+    res.json(chatCompleto);
   } catch (err) {
     console.error('Erro ao buscar chat:', err);
     res.status(500).json({ error: 'Erro interno' });
