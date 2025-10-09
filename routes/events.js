@@ -542,7 +542,7 @@ router.post('/dispatch', async (req, res) => {
 
         // 🔹 Atualiza cache Redis (incremental)
         try {
-            const redisKeys = await redis.keys(`chats:${userId}:*`);
+            const redisKeys = await redis.keys(`chats:${userId}:0`);
 
             for (const key of redisKeys) {
                 const cached = await redis.get(key);
