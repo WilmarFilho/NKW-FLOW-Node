@@ -590,6 +590,7 @@ router.post('/dispatch', async (req, res) => {
                 let updated = false;
 
                 for (const chat of parsed.chats || []) {
+
                     if (chat.id === chatId) {
                         chat.ultimas_mensagens = [
                             { ...msgCriada },
@@ -608,6 +609,32 @@ router.post('/dispatch', async (req, res) => {
 
                         updated = true;
                     }
+             
+                    if (!parsed.chats.some(c => c.id === chatId) && chatCompleto) {
+                        // Busca as últimas 7 mensagens desse chat no banco
+                        const { data: ultimasMsgs, error: ultimasMsgsError } = await supabase
+                            .from('messages')
+                            .select('*')
+                            .eq('chat_id', chatId)
+                            .order('criado_em', { ascending: false })
+                            .limit(7);
+
+                        const ultimas_mensagens = [ultimasMsgs, msgCriada] || [{ ...msgCriada }];
+
+                        const novoChat = {
+                            ...chatCompleto,
+                            ultimas_mensagens,
+                            ultima_mensagem: msgCriada.mensagem,
+                            ultima_mensagem_type: msgCriada.mimetype,
+                            mensagem_data: msgCriada.criado_em || new Date().toISOString(),
+                            ultima_atualizacao: new Date().toISOString(),
+                            unread_count: msgCriada.remetente === "Contato" ? 1 : 0
+                        };
+                        parsed.chats = [novoChat, ...parsed.chats];
+                        updated = true;
+                        break; // já adicionou, não precisa continuar
+                    }
+                    
                 }
 
                 if (updated) {
