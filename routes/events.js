@@ -542,7 +542,7 @@ router.post('/dispatch', async (req, res) => {
 
         // 🔹 Atualiza cache Redis (incremental)
         try {
-            const redisKeys = await redis.keys(`chats:${userId}:0`);
+            const redisKeys = await redis.keys(`chats:${userId}:*`);
 
             for (const key of redisKeys) {
                 const cached = await redis.get(key);
@@ -574,6 +574,7 @@ router.post('/dispatch', async (req, res) => {
 
                 if (updated) {
                     await redis.set(key, JSON.stringify(parsed)); // usa set normal (mantém TTL)
+                    console.log(`✅ Cache Redis atualizado para a chave ${key}`);
                 }
             }
         } catch (err) {

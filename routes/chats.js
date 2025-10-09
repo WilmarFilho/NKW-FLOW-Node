@@ -17,7 +17,7 @@ const redis = new Redis({
 // --- LISTA CHATS COM PAGINAÇÃO (8 em 8) E PELO MENOS 8 MENSAGENS RECENTES ---
 router.get("/", authMiddleware, async (req, res) => {
   const {
-    limit = 8,
+    limit = 8, // 👈 chats por página
     cursor,
     status = "Open",
     owner = "all",
@@ -32,22 +32,25 @@ router.get("/", authMiddleware, async (req, res) => {
   if (!user_id) return res.status(400).json({ error: "User ID é obrigatório." });
 
   try {
-    // 🔹 Só cacheia se NÃO houver filtros adicionais
-    const canCache =
-      !search &&
-      !connection_id &&
-      !attendant_id &&
-      owner === "all" &&
-      iaStatus === "todos" &&
-      status === "Open";
+    // 🔹 Cache Redis
 
-    const cacheKey = `chats:${user_id}:0`;
+    // Monta cacheKey incluindo todos os filtros relevantes
+    const cacheKey = [
+      "chats",
+      user_id,
+      cursor || "0",
+      status,
+      owner,
+      search || "",
+      iaStatus,
+      connection_id || "all",
+      attendant_id || "all"
+    ].join(":");
 
-    if (canCache) {
-      const cached = await redis.get(cacheKey);
-      if (cached) {
-        return res.json(JSON.parse(cached));
-      }
+    const cached = await redis.get(cacheKey);
+
+    if (cached) {
+      return res.json(JSON.parse(cached));
     }
 
     // 1️⃣ Pega attendant e conexões permitidas
@@ -82,12 +85,10 @@ router.get("/", authMiddleware, async (req, res) => {
     if (!conexoes?.length) return res.json({ chats: [], nextCursor: null });
     const connectionIds = conexoes.map((c) => c.id);
 
-    // 2️⃣ Buscar 8 chats
+    // 2️⃣ Buscar 8 chats com filtros
     let chatQuery = supabase
       .from("chats")
-      .select(
-        "id, contato_nome, contato_numero, connection_id, user_id, ia_ativa, ia_desligada_em, foto_perfil, status, ultima_atualizacao"
-      )
+      .select("id, contato_nome, contato_numero, connection_id, user_id, ia_ativa, ia_desligada_em, foto_perfil, status, ultima_atualizacao")
       .in("connection_id", connectionIds)
       .order("ultima_atualizacao", { ascending: false })
       .limit(limit);
@@ -101,8 +102,7 @@ router.get("/", authMiddleware, async (req, res) => {
     if (status) chatQuery = chatQuery.eq("status", status);
     if (search) chatQuery = chatQuery.ilike("contato_nome", `%${search}%`);
     if (iaStatus === "ativa") chatQuery = chatQuery.eq("ia_ativa", true);
-    if (iaStatus === "desativada")
-      chatQuery = chatQuery.or("ia_ativa.is.false,ia_ativa.is.null");
+    if (iaStatus === "desativada") chatQuery = chatQuery.or("ia_ativa.is.false,ia_ativa.is.null");
 
     const { data: chats, error: chatError } = await chatQuery;
     if (chatError) throw chatError;
@@ -111,45 +111,53 @@ router.get("/", authMiddleware, async (req, res) => {
     const chatIds = chats.map((c) => c.id);
     const donoIds = [...new Set(chats.map((c) => c.user_id).filter(Boolean))];
 
-    // 3️⃣ Buscar dados complementares
+    // 3️⃣ Buscar dados complementares em paralelo
     const [users, messages, reads] = await Promise.all([
       donoIds.length
         ? supabase.from("users").select("id, nome").in("id", donoIds)
         : { data: [] },
       supabase
         .from("messages")
-        .select(
-          "id, chat_id, mensagem, mimetype, criado_em, remetente, base64"
-        )
+        .select("id, chat_id, mensagem, mimetype, criado_em, remetente, base64")
         .in("chat_id", chatIds)
         .order("criado_em", { ascending: false }),
       supabase
         .from("chats_reads")
         .select("chat_id, connection_id, last_read_at")
         .in("chat_id", chatIds)
-        .in("connection_id", connectionIds),
+        .in("connection_id", connectionIds)
     ]);
 
-    // 4️⃣ Agrupar mensagens recentes
+    // 4️⃣ Agrupar até 8 mensagens recentes por chat
     const mensagensPorChat = {};
-    for (const chatId of chatIds) mensagensPorChat[chatId] = [];
+
+    // Primeiro, cria um map de arrays vazios para cada chat
+    for (const chatId of chatIds) {
+      mensagensPorChat[chatId] = [];
+    }
+
+    // Itera sobre as mensagens ordenadas do mais recente para o mais antigo
     for (const msg of messages.data || []) {
       if (mensagensPorChat[msg.chat_id].length < 8) {
         mensagensPorChat[msg.chat_id].push(msg);
       }
     }
 
+    // 5️⃣ Agrupar last_read_at por chat_id+connection_id
     const lastReadMap = {};
     for (const read of reads.data || []) {
       lastReadMap[`${read.chat_id}:${read.connection_id}`] = read.last_read_at;
     }
 
-    // 5️⃣ Montar payload final
+    // 6️⃣ Montar payload final
     const chatsCompletos = chats.map((chat) => {
       const dono = users.data?.find((d) => d.id === chat.user_id);
       const msgs = mensagensPorChat[chat.id] || [];
+
+      // Busca o last_read_at para este chat e connection
       const lastReadAt = lastReadMap[`${chat.id}:${chat.connection_id}`];
 
+      // Conta quantas mensagens do contato são posteriores ao last_read_at
       let unread_count = 0;
       if (lastReadAt) {
         unread_count = msgs.filter(
@@ -172,7 +180,7 @@ router.get("/", authMiddleware, async (req, res) => {
       };
     });
 
-    // 6️⃣ Paginação
+    // 7️⃣ Calcular cursor para paginação
     let nextCursor = null;
     if (chatsCompletos.length > 0) {
       const last = chatsCompletos[chatsCompletos.length - 1];
@@ -181,10 +189,8 @@ router.get("/", authMiddleware, async (req, res) => {
 
     const result = { chats: chatsCompletos, nextCursor };
 
-    // 7️⃣ Cache apenas se for uma requisição padrão (sem filtros)
-    if (canCache) {
-      await redis.setex(cacheKey, 300, JSON.stringify(result));
-    }
+    // 8️⃣ Cache no Redis (300s)
+    await redis.setex(cacheKey, 300, JSON.stringify(result));
 
     res.json(result);
   } catch (err) {
