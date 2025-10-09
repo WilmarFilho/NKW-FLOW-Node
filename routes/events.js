@@ -543,10 +543,6 @@ router.post('/dispatch', async (req, res) => {
         // 🔹 Atualiza cache Redis (incremental)
         try {
             const redisKeys = await redis.keys(`chats:${userId}:0`);
-            
-            if (!redisKeys.length) {
-                console.log(`ℹ️ Nenhum cache encontrado para chats:${userId}:0`);
-            }
 
             for (const key of redisKeys) {
                 const cached = await redis.get(key);
@@ -578,7 +574,6 @@ router.post('/dispatch', async (req, res) => {
 
                 if (updated) {
                     await redis.set(key, JSON.stringify(parsed)); // usa set normal (mantém TTL)
-                    console.log(`✅ Cache atualizado para ${key}`);
                 }
             }
         } catch (err) {
@@ -729,3 +724,6 @@ module.exports = {
     router,
     eventClientsByUser
 };
+
+
+
