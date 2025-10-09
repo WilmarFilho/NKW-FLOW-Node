@@ -4,6 +4,9 @@ FROM node:22.14.0
 # Define diretório de trabalho
 WORKDIR /app
 
+# Instala ffmpeg e dependências básicas
+RUN apt-get update && apt-get install -y ffmpeg && rm -rf /var/lib/apt/lists/*
+
 # Copia os arquivos de dependência
 COPY package*.json ./
 
