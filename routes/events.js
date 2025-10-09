@@ -1,5 +1,10 @@
 const express = require('express');
 const axios = require("axios");
+const sharp = require('sharp');
+const ffmpeg = require('fluent-ffmpeg');
+const { tmpdir } = require('os');
+const { join } = require('path');
+const fs = require('fs/promises');
 const router = express.Router();
 const { createClient } = require('@supabase/supabase-js');
 require('dotenv').config();
@@ -61,77 +66,105 @@ async function buscarDadosContato(numero, instance) {
 
 async function processarMensagemComMedia(data, connectionId, remetente, tipoMedia, campoMensagem, mimeDefault) {
     try {
-
+        // 1️⃣ Buscar o base64
         const response = await axios.post(
             `${process.env.EVOLUTION_API_URL}/chat/getBase64FromMediaMessage/${connectionId}`,
             { message: data },
             { headers: { apikey: process.env.EVOLUTION_API_KEY } }
         );
 
-        const base64 = response?.data?.base64 || null;
-
+        const base64 = response?.data?.base64;
         if (!base64) {
-            console.error(`Falha ao obter base64 da mídia (${tipoMedia}). A API não retornou o conteúdo.`);
+            console.error(`Falha ao obter base64 da mídia (${tipoMedia}).`);
             return null;
         }
 
-        // ETAPA 2: Converter base64 para Buffer
-        const fileBuffer = Buffer.from(base64, 'base64');
+        let fileBuffer = Buffer.from(base64, 'base64');
 
-        // ETAPA 3: Criar um nome de arquivo único
-        const mimeType = (
+        // 2️⃣ Detectar tipo e extensão
+        const mimeType =
             data.message.imageMessage?.mimetype ||
             data.message.audioMessage?.mimetype ||
             data.message.documentMessage?.mimetype ||
-            mimeDefault
-        );
+            mimeDefault;
 
         const fileExtension = mimeType.split('/')[1] || 'bin';
+        const tempPath = join(tmpdir(), `${campoMensagem.id}.${fileExtension}`);
 
+        // 3️⃣ Compressão condicional
+        switch (tipoMedia) {
+            case 'image':
+                fileBuffer = await sharp(fileBuffer)
+                    .jpeg({ quality: 80 }) // controla compressão (60–85 ideal)
+                    .toBuffer();
+                break;
+
+            case 'video':
+                await fs.writeFile(tempPath, fileBuffer);
+                const outputPath = join(tmpdir(), `${campoMensagem.id}-compressed.mp4`);
+                await new Promise((resolve, reject) => {
+                    ffmpeg(tempPath)
+                        .outputOptions(['-vcodec libx264', '-crf 28', '-preset veryfast'])
+                        .save(outputPath)
+                        .on('end', resolve)
+                        .on('error', reject);
+                });
+                fileBuffer = await fs.readFile(outputPath);
+                await fs.unlink(tempPath);
+                await fs.unlink(outputPath);
+                break;
+
+            case 'audio':
+                await fs.writeFile(tempPath, fileBuffer);
+                const outAudio = join(tmpdir(), `${campoMensagem.id}-compressed.mp3`);
+                await new Promise((resolve, reject) => {
+                    ffmpeg(tempPath)
+                        .audioBitrate('96k')
+                        .save(outAudio)
+                        .on('end', resolve)
+                        .on('error', reject);
+                });
+                fileBuffer = await fs.readFile(outAudio);
+                await fs.unlink(tempPath);
+                await fs.unlink(outAudio);
+                break;
+
+            // documentos e stickers ficam como estão
+        }
+
+        // 4️⃣ Upload pro Supabase
         const fileName = `${MEDIA_FOLDER}/${campoMensagem.id}.${fileExtension}`;
-
-        // ETAPA 4: Fazer upload do buffer para o Supabase Storage
         const { error: uploadError } = await supabase.storage
             .from(BUCKET_NAME)
             .upload(fileName, fileBuffer, {
-                contentType: mimeDefault,
+                contentType: mimeType,
                 upsert: true,
             });
 
         if (uploadError) {
-            console.error(`Erro no upload para o Supabase (${tipoMedia}):`, uploadError.message);
-            return null; // Falha a operação se o upload não funcionar
+            console.error(`Erro no upload (${tipoMedia}):`, uploadError.message);
+            return null;
         }
 
-        // ETAPA 5: Obter a URL pública do arquivo
-        const { data: urlData } = supabase.storage
-            .from(BUCKET_NAME)
-            .getPublicUrl(fileName);
-
+        // 5️⃣ Obter URL pública
+        const { data: urlData } = supabase.storage.from(BUCKET_NAME).getPublicUrl(fileName);
         const publicUrl = urlData.publicUrl;
 
-        // ETAPA 6: Montar o objeto final da mensagem com a URL
-        let mensagem = null;
+        // 6️⃣ Montar retorno
+        let mensagem = '';
         let file_name = null;
-        let mimetype = mimeDefault;
+        let mimetype = mimeType;
 
         switch (tipoMedia) {
             case 'image':
                 mensagem = data.message.imageMessage?.caption || '';
-                mimetype = 'image/png';
                 break;
             case 'video':
                 mensagem = data.message.videoMessage?.caption || '';
-                mimetype = 'video/mp4';
                 break;
             case 'audio':
-                mimetype = data.message.audioMessage?.mimetype || mimeDefault;
-                break;
-            case 'sticker':
-                mimetype = data.message.stickerMessage?.mimetype || mimeDefault;
                 break;
             case 'document':
-                mimetype = data.message.documentMessage?.mimetype || mimeDefault;
                 mensagem = data.message.documentMessage?.caption;
                 file_name = data.message.documentMessage?.fileName;
                 break;
@@ -146,9 +179,10 @@ async function processarMensagemComMedia(data, connectionId, remetente, tipoMedi
             mimetype,
             file_name,
             base64: publicUrl,
-            ...(tipoMedia === 'document' && campoMensagem.nome_arquivo ? { nome_arquivo: campoMensagem.nome_arquivo } : {})
+            ...(tipoMedia === 'document' && campoMensagem.nome_arquivo
+                ? { nome_arquivo: campoMensagem.nome_arquivo }
+                : {}),
         };
-
     } catch (err) {
         console.error(`Erro CRÍTICO ao processar mídia (${tipoMedia}):`, err);
         return null;
@@ -516,11 +550,17 @@ router.post('/dispatch', async (req, res) => {
 
         if (!novaMensagem) {
             // Se não for mídia nem tipo não suportado, salva como texto/conversation
+            const textoMensagem =
+                data.message?.conversation ||
+                data.message?.extendedTextMessage?.text ||
+                data.message?.ephemeralMessage?.message?.extendedTextMessage?.text ||
+                null;
+
             novaMensagem = {
                 id: data.key.id,
                 chat_id: chatId,
                 remetente,
-                mensagem: data.message?.conversation || null,
+                mensagem: textoMensagem,
                 quote_id: quoteId,
             };
         }
