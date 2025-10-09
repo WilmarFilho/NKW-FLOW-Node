@@ -1,8 +1,13 @@
 const express = require('express');
 const router = express.Router();
 const { createClient } = require('@supabase/supabase-js');
-const { authMiddleware } = require('../middleware/auth'); // nosso middleware global
+const { authMiddleware } = require('../middleware/auth');
 require('dotenv').config();
+const Redis = require('ioredis');
+const redis = new Redis({
+  host: process.env.REDIS_HOST || 'redis',
+  port: process.env.REDIS_PORT || 6379,
+});
 
 const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_KEY);
 
@@ -33,6 +38,9 @@ router.post('/', authMiddleware, async (req, res) => {
 
     if (error) return res.status(500).json({ error: 'Erro ao criar atendente.' });
 
+    // Limpa cache dos atendentes do admin
+    await redis.del(`attendants:${admin_id}`);
+
     res.status(201).json({ message: 'Atendente criado com sucesso.', data });
   } catch (err) {
     console.error('Erro inesperado ao criar atendente:', err);
@@ -46,6 +54,12 @@ router.get('/', authMiddleware, async (req, res) => {
     const admin_id = req.authId;
     if (!(await isAdmin(admin_id))) return res.status(403).json({ error: 'Apenas admins podem listar atendentes.' });
 
+    const cacheKey = `attendants:${admin_id}`;
+    const cached = await redis.get(cacheKey);
+    if (cached) {
+      return res.status(200).json(JSON.parse(cached));
+    }
+
     const { data, error } = await supabase
       .from('attendants')
       .select(`
@@ -57,6 +71,9 @@ router.get('/', authMiddleware, async (req, res) => {
       .eq('user_admin_id', admin_id);
 
     if (error) return res.status(500).json({ error: 'Erro ao listar atendentes.' });
+
+    // Cacheia por 30 minutos
+    await redis.set(cacheKey, JSON.stringify(data), 'EX', 1800);
 
     res.status(200).json(data);
   } catch (err) {
@@ -118,6 +135,9 @@ router.patch('/:id', authMiddleware, async (req, res) => {
       if (attError) return res.status(500).json({ error: 'Erro ao atualizar atendente.' });
     }
 
+    // Limpa cache dos atendentes do admin
+    await redis.del(`attendants:${admin_id}`);
+
     res.status(200).json({ message: 'Atendente atualizado com sucesso.' });
   } catch (err) {
     console.error('Erro inesperado ao atualizar atendente:', err);
@@ -148,6 +168,9 @@ router.delete('/:id', authMiddleware, async (req, res) => {
 
     const { error: deleteAuthError } = await supabase.auth.admin.deleteUser(attendant.user_id);
     if (deleteAuthError) return res.status(500).json({ error: 'Erro ao deletar usuário do Auth.' });
+
+    // Limpa cache dos atendentes do admin
+    await redis.del(`attendants:${admin_id}`);
 
     res.status(200).json({ message: 'Atendente e usuário Auth deletados com sucesso.' });
   } catch (err) {

@@ -17,11 +17,36 @@ router.post('/', authMiddleware, async (req, res) => {
   const { nome, agente_id } = req.body;
   const user_id = req.userId;
 
-  if (!user_id || !nome || !agente_id) {
-    return sendError(res, 400, 'Todos os campos são obrigatórios.');
+  if (!user_id || !nome) {
+    return sendError(res, 400, 'Nome e usuário são obrigatórios.');
   }
 
   try {
+    // Busca o plano do usuário na tabela subscriptions
+    const { data: subData, error: subError } = await supabase
+      .from('subscriptions')
+      .select('plano')
+      .eq('user_id', user_id)
+      .single();
+
+    if (subError || !subData) return sendError(res, 403, 'Plano do usuário não encontrado.');
+
+    let maxConnections = 4;
+    let requireAgente = true;
+
+    if (subData.plano === 'basico') {
+      maxConnections = 2;
+      requireAgente = false;
+    } else if (subData.plano === 'intermediario') {
+      maxConnections = 4;
+    } else if (subData.plano === 'premium') {
+      maxConnections = 6;
+    }
+
+    if (requireAgente && !agente_id) {
+      return sendError(res, 400, 'O campo agente_id é obrigatório para este plano.');
+    }
+
     // Verifica limite de conexões do usuário
     const { count, error: countError } = await supabase
       .from('connections')
@@ -29,12 +54,14 @@ router.post('/', authMiddleware, async (req, res) => {
       .eq('user_id', user_id);
 
     if (countError) throw countError;
-    if (count >= 4) return sendError(res, 400, 'Limite de 4 conexões atingido.');
+    if (count >= maxConnections) {
+      return sendError(res, 400, `Limite de ${maxConnections} conexões atingido para seu plano.`);
+    }
 
     // Salvar conexão no Supabase 
     const { data, error } = await supabase
       .from('connections')
-      .insert([{ user_id, nome, numero: null, status: null, agente_id }])
+      .insert([{ user_id, nome, numero: null, status: null, agente_id: agente_id || null }])
       .select();
 
     if (error || !data || data.length === 0) throw error || new Error('Falha ao salvar conexão.');
@@ -42,7 +69,6 @@ router.post('/', authMiddleware, async (req, res) => {
     const instanceId = data[0].id;
 
     // Criar instância no Evolution
-
     const evolutionResponse = await axios.post(
       `${process.env.EVOLUTION_API_URL}/instance/create`,
       {
@@ -142,6 +168,14 @@ router.delete('/:id', authMiddleware, async (req, res) => {
   if (!id) return sendError(res, 400, 'ID da conexão é obrigatório.');
 
   try {
+    // Busca user_id antes de deletar
+    const { data: connData } = await supabase
+      .from('connections')
+      .select('user_id')
+      .eq('id', id)
+      .single();
+
+    const user_id = connData?.user_id;
 
     const { data: attendantsData } = await supabase
       .from('attendants')
@@ -171,6 +205,16 @@ router.delete('/:id', authMiddleware, async (req, res) => {
       await axios.delete(`${process.env.EVOLUTION_API_URL}/instance/delete/${id}`, { headers: { apikey: process.env.EVOLUTION_API_KEY } });
     } catch (axiosErr) {
       console.error('Erro ao deletar instância no Evolution:', axiosErr.response?.data || axiosErr.message);
+    }
+
+    // Limpa o cache
+    if (user_id) {
+      const cacheKey = `chats:${user_id}:0`;
+      try {
+        await require('ioredis')().del(cacheKey);
+      } catch (cacheErr) {
+        console.error('Erro ao limpar cache:', cacheErr.message || cacheErr);
+      }
     }
 
     res.status(200).json({ message: 'Conexão deletada com sucesso.' });

@@ -12,13 +12,6 @@ const jwt = require("jsonwebtoken");
 
 const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_KEY);
 
-const Redis = require('ioredis');
-
-const redis = new Redis({
-    host: process.env.REDIS_HOST || 'redis',
-    port: process.env.REDIS_PORT || 6379,
-});
-
 const eventClientsByUser = {};
 
 const BUCKET_NAME = "bucket_arquivos_medias";
@@ -577,73 +570,7 @@ router.post('/dispatch', async (req, res) => {
         };
 
         enrichedEvent.chat = chatCompleto || chatExistente;
-
-        // 🔹 Atualiza cache Redis (incremental)
-        try {
-            const redisKeys = await redis.keys(`chats:${userId}:0`);
-
-            for (const key of redisKeys) {
-                const cached = await redis.get(key);
-                if (!cached) continue;
-
-                const parsed = JSON.parse(cached);
-                let updated = false;
-
-                for (const chat of parsed.chats || []) {
-
-                    if (chat.id === chatId) {
-                        chat.ultimas_mensagens = [
-                            { ...msgCriada },
-                            ...(chat.ultimas_mensagens || []).slice(0, 7)
-                        ];
-
-                        chat.ultima_mensagem = msgCriada.mensagem || chat.ultima_mensagem;
-                        chat.ultima_mensagem_type = msgCriada.mimetype || chat.ultima_mensagem_type;
-                        chat.mensagem_data = msgCriada.criado_em || new Date().toISOString();
-                        chat.ultima_atualizacao = new Date().toISOString();
-
-                        // Atualiza contagem de não lidas se for mensagem do contato
-                        if (msgCriada.remetente === "Contato") {
-                            chat.unread_count = (chat.unread_count || 0) + 1;
-                        }
-
-                        updated = true;
-                    }
-             
-                    if (!parsed.chats.some(c => c.id === chatId) && chatCompleto) {
-                        // Busca as últimas 7 mensagens desse chat no banco
-                        const { data: ultimasMsgs, error: ultimasMsgsError } = await supabase
-                            .from('messages')
-                            .select('*')
-                            .eq('chat_id', chatId)
-                            .order('criado_em', { ascending: false })
-                            .limit(7);
-
-                        const ultimas_mensagens = [ultimasMsgs, msgCriada] || [{ ...msgCriada }];
-
-                        const novoChat = {
-                            ...chatCompleto,
-                            ultimas_mensagens,
-                            ultima_mensagem: msgCriada.mensagem,
-                            ultima_mensagem_type: msgCriada.mimetype,
-                            mensagem_data: msgCriada.criado_em || new Date().toISOString(),
-                            ultima_atualizacao: new Date().toISOString(),
-                            unread_count: msgCriada.remetente === "Contato" ? 1 : 0
-                        };
-                        parsed.chats = [novoChat, ...parsed.chats];
-                        updated = true;
-                        break; // já adicionou, não precisa continuar
-                    }
-                    
-                }
-
-                if (updated) {
-                    await redis.set(key, JSON.stringify(parsed)); // usa set normal (mantém TTL)
-                }
-            }
-        } catch (err) {
-            console.error("❌ Erro ao atualizar cache Redis:", err);
-        }
+        
     }
 
     if (event === 'messages.delete') {

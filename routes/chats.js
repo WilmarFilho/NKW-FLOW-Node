@@ -7,17 +7,10 @@ require('dotenv').config();
 
 const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_KEY);
 
-const Redis = require('ioredis');
-
-const redis = new Redis({
-  host: process.env.REDIS_HOST || 'redis',
-  port: process.env.REDIS_PORT || 6379,
-});
-
 // --- LISTA CHATS COM PAGINAÇÃO (8 em 8) E PELO MENOS 8 MENSAGENS RECENTES ---
 router.get("/", authMiddleware, async (req, res) => {
   const {
-    limit = 8,
+    limit = 7,
     cursor,
     status = "Open",
     owner = "all",
@@ -29,27 +22,10 @@ router.get("/", authMiddleware, async (req, res) => {
 
   const user_id = req.userId;
   const auth_id = req.authId;
+
   if (!user_id) return res.status(400).json({ error: "User ID é obrigatório." });
 
   try {
-    // 🔹 Só cacheia se NÃO houver filtros adicionais
-    const canCache =
-      !cursor &&
-      !search &&
-      !connection_id &&
-      !attendant_id &&
-      owner === "all" &&
-      iaStatus === "todos" &&
-      status === "Open";
-
-    const cacheKey = `chats:${user_id}:0`;
-
-    if (canCache) {
-      const cached = await redis.get(cacheKey);
-      if (cached) {
-        return res.json(JSON.parse(cached));
-      }
-    }
 
     // 1️⃣ Pega attendant e conexões permitidas
     const { data: attendant } = await supabase
@@ -83,7 +59,7 @@ router.get("/", authMiddleware, async (req, res) => {
     if (!conexoes?.length) return res.json({ chats: [], nextCursor: null });
     const connectionIds = conexoes.map((c) => c.id);
 
-    // 2️⃣ Buscar 8 chats
+    // 2️⃣ Buscar 7 chats
     let chatQuery = supabase
       .from("chats")
       .select(
@@ -114,29 +90,33 @@ router.get("/", authMiddleware, async (req, res) => {
 
     // 3️⃣ Buscar dados complementares
     const [users, messages, reads] = await Promise.all([
+
       donoIds.length
-        ? supabase.from("users").select("id, nome").in("id", donoIds)
-        : { data: [] },
+      ? supabase.from("users").select("id, nome").in("id", donoIds)
+      : { data: [] },
+
       supabase
-        .from("messages")
-        .select(
-          "id, chat_id, mensagem, mimetype, criado_em, remetente, base64"
-        )
-        .in("chat_id", chatIds)
-        .order("criado_em", { ascending: false }),
+      .from("messages")
+      .select(
+        "chat_id, mensagem, mimetype"
+      )
+      .in("chat_id", chatIds)
+      .order("criado_em", { ascending: false }),
+
       supabase
-        .from("chats_reads")
-        .select("chat_id, connection_id, last_read_at")
-        .in("chat_id", chatIds)
-        .in("connection_id", connectionIds),
+      .from("chats_reads")
+      .select("chat_id, connection_id, last_read_at")
+      .in("chat_id", chatIds)
+      .in("connection_id", connectionIds),
+
     ]);
 
-    // 4️⃣ Agrupar mensagens recentes
+    // 4️⃣ Pega só a última mensagem de cada chat
     const mensagensPorChat = {};
     for (const chatId of chatIds) mensagensPorChat[chatId] = [];
     for (const msg of messages.data || []) {
-      if (mensagensPorChat[msg.chat_id].length < 8) {
-        mensagensPorChat[msg.chat_id].push(msg);
+      if (mensagensPorChat[msg.chat_id].length === 0) {
+      mensagensPorChat[msg.chat_id].push(msg);
       }
     }
 
@@ -151,25 +131,27 @@ router.get("/", authMiddleware, async (req, res) => {
       const msgs = mensagensPorChat[chat.id] || [];
       const lastReadAt = lastReadMap[`${chat.id}:${chat.connection_id}`];
 
-      let unread_count = 0;
+      // Pega a mensagem mais recente (primeira do array msgs)
+      const ultimaMensagem = msgs[0] || null;
+
+      let unread_count = false;
       if (lastReadAt) {
-        unread_count = msgs.filter(
+        unread_count = msgs.some(
           (m) =>
             m.remetente === "Contato" &&
             (!m.criado_em || new Date(m.criado_em) > new Date(lastReadAt))
-        ).length;
+        )
+          ? true
+          : false;
       } else {
-        unread_count = msgs.filter((m) => m.remetente === "Contato").length;
+        unread_count = msgs.some((m) => m.remetente === "Contato") ? true : false;
       }
 
       return {
         ...chat,
-        ultima_mensagem: msgs[0]?.mensagem || null,
-        ultima_mensagem_type: msgs[0]?.mimetype || null,
-        mensagem_data: msgs[0]?.criado_em || chat.ultima_atualizacao,
+        ultima_mensagem: ultimaMensagem,
         unread_count,
         user_nome: dono?.nome || null,
-        ultimas_mensagens: msgs,
       };
     });
 
@@ -177,15 +159,14 @@ router.get("/", authMiddleware, async (req, res) => {
     let nextCursor = null;
     if (chatsCompletos.length > 0) {
       const last = chatsCompletos[chatsCompletos.length - 1];
-      nextCursor = Buffer.from(last.mensagem_data || "").toString("base64");
+      nextCursor = Buffer.from(last.ultima_atualizacao || "").toString("base64");
+      console.log(`Next cursor gerado: ${nextCursor}`);
+      console.log(last)
     }
+
+    console.log(`Retornando ${chatsCompletos.length} chats para user_id ${user_id}`);
 
     const result = { chats: chatsCompletos, nextCursor };
-
-    // 7️⃣ Cache apenas se for uma requisição padrão (sem filtros)
-    if (canCache) {
-      await redis.setex(cacheKey, 300, JSON.stringify(result));
-    }
 
     res.json(result);
   } catch (err) {

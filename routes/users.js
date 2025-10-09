@@ -3,6 +3,11 @@ const router = express.Router();
 const { createClient } = require('@supabase/supabase-js');
 require('dotenv').config();
 const jwt = require('jsonwebtoken');
+const Redis = require('ioredis');
+const redis = new Redis({
+  host: process.env.REDIS_HOST || 'redis',
+  port: process.env.REDIS_PORT || 6379,
+});
 
 // Cliente Supabase com service key
 const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_KEY);
@@ -38,8 +43,15 @@ const authMiddleware = (req, res, next) => {
 // --- GET Usuário ---
 router.get('/', authMiddleware, async (req, res) => {
   const tokenUserId = req.user_id;
+  const cacheKey = `user:${tokenUserId}`;
 
   try {
+    // Tenta buscar do cache
+    const cached = await redis.get(cacheKey);
+    if (cached) {
+      return res.json(JSON.parse(cached));
+    }
+
     // Busca usuário pelo auth_id
     const { data: user, error: userError } = await supabase
       .from('users')
@@ -77,7 +89,7 @@ router.get('/', authMiddleware, async (req, res) => {
           .single();
         if (connError) return sendError(res, 500, connError.message);
 
-        return res.json({
+        const result = {
           ...user,
           role: 'attendant',
           connection_id: connection?.id,
@@ -85,11 +97,15 @@ router.get('/', authMiddleware, async (req, res) => {
           user_admin_id: attendant.user_admin_id,
           plano: subscription?.plano,
           subscription_status: subscription?.status
-        });
+        };
+        await redis.set(cacheKey, JSON.stringify(result), 'EX', 600);
+        return res.json(result);
       }
     }
 
-    return res.json({ ...user, role: 'admin', plano: subscription?.plano, subscription_status: subscription?.status });
+    const result = { ...user, role: 'admin', plano: subscription?.plano, subscription_status: subscription?.status };
+    await redis.set(cacheKey, JSON.stringify(result), 'EX', 600);
+    return res.json(result);
   } catch (err) {
     console.error('Erro inesperado ao buscar usuário:', err);
     return sendError(res, 500, err.message);
@@ -100,6 +116,7 @@ router.get('/', authMiddleware, async (req, res) => {
 router.put('/:id', authMiddleware, async (req, res) => {
   const tokenUserId = req.user_id;
   const targetUserId = req.params.id;
+  const cacheKey = `user:${tokenUserId}`;
 
   try {
     // Usuário logado
@@ -181,6 +198,9 @@ router.put('/:id', authMiddleware, async (req, res) => {
       .select();
 
     if (error) return sendError(res, 500, error.message);
+
+    // Limpa o cache do usuário ao atualizar
+    await redis.del(cacheKey);
 
     return res.json({
       message: 'Usuário atualizado com sucesso',

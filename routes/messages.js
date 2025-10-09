@@ -145,7 +145,7 @@ router.post('/', authMiddleware, async (req, res) => {
 // --- BUSCAR MENSAGENS COM PAGINAÇÃO ---
 router.get('/chat/:chat_id', authMiddleware, async (req, res) => {
   const { chat_id } = req.params;
-  const { limit = 20, cursor, oldestMessage } = req.query;
+  const { limit = 12, cursor } = req.query;
 
   try {
     let query = supabase
@@ -162,22 +162,16 @@ router.get('/chat/:chat_id', authMiddleware, async (req, res) => {
       `)
       .eq('chat_id', chat_id)
       .order('criado_em', { ascending: false })
-      .limit(Number(limit));
+      .limit(limit);
 
-    // Se existir cursor (paginação), filtra
     if (cursor) {
       const ts = Buffer.from(cursor, 'base64').toString('utf8');
       query = query.lt('criado_em', ts);
-    }
-    // Se não existir cursor, mas existe oldestMessage (primeira chamada)
-    else if (oldestMessage) {
-      query = query.lt('criado_em', oldestMessage);
     }
 
     const { data, error } = await query;
     if (error) return res.status(500).send('Erro ao buscar mensagens.');
 
-    // Cria o próximo cursor a partir da mensagem mais antiga retornada
     const nextCursor = data.length > 0
       ? Buffer.from(data[data.length - 1].criado_em).toString('base64')
       : null;
