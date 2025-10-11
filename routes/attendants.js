@@ -25,6 +25,7 @@ const isAdmin = async (authId) => {
 // --- CRIA ATENDENTE ---
 router.post('/', authMiddleware, async (req, res) => {
   try {
+    
     const admin_id = req.authId;
     const { user_id: newUserId, connection_id } = req.body;
 

@@ -77,16 +77,71 @@ router.post('/', express.json({ limit: '250mb' }), async (req, res) => {
       notificacao_novo_chat = false
     } = req.body;
 
-
+    let adminUserId = null;
 
     if (tipo_de_usuario === 'admin') {
       if (!checkInternalKey(req)) {
         return sendError(res, 403, 'Somente chamadas internas podem criar admins.');
       }
     } else if (tipo_de_usuario === 'atendente') {
-      const adminUser = await checkAdminJWT(req);
-      if (!adminUser) {
+      const authHeader = req.headers['authorization'];
+      if (!authHeader || !authHeader.startsWith('Bearer ')) {
+        return sendError(res, 401, 'Token não fornecido ou inválido.');
+      }
+
+      const token = authHeader.split(' ')[1];
+      if (!token) return sendError(res, 401, 'Token inválido.');
+
+      const payload = jwt.decode(token);
+      const tokenAuthId = payload?.sub;
+
+      if (!tokenAuthId) return sendError(res, 401, 'Token inválido.');
+
+      const { data: dbUser } = await supabase
+        .from('users')
+        .select('id, tipo_de_usuario')
+        .eq('auth_id', tokenAuthId)
+        .single();
+
+      if (!dbUser || dbUser.tipo_de_usuario !== 'admin') {
         return sendError(res, 403, 'Somente admins podem criar atendentes.');
+      }
+
+      adminUserId = dbUser.id;
+
+      // Verifica o plano do usuário admin
+      const { data: subData, error: subError } = await supabase
+        .from('subscriptions')
+        .select('plano')
+        .eq('user_id', adminUserId)
+        .single();
+
+      if (subError || !subData) {
+        return sendError(res, 403, 'Plano do usuário não encontrado.');
+      }
+
+      // Define limites por plano
+      let maxAtendentes = 0;
+      if (subData.plano === 'basico') {
+        maxAtendentes = 2;
+      } else if (subData.plano === 'intermediario') {
+        maxAtendentes = 4;
+      } else if (subData.plano === 'premium') {
+        maxAtendentes = 6;
+      }
+
+      // Conta quantos atendentes o admin já tem
+      const { count, error: countError } = await supabase
+        .from('attendants')
+        .select('id', { count: 'exact', head: true })
+        .eq('user_admin_id', tokenAuthId);
+
+      if (countError) {
+        return sendError(res, 500, 'Erro ao verificar limite de atendentes.');
+      }
+
+      if (count >= maxAtendentes) {
+        return sendError(res, 400, `Limite de ${maxAtendentes} atendentes atingido para seu plano.`);
       }
     } else {
       return sendError(res, 400, 'Tipo de usuário inválido.');

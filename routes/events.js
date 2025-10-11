@@ -187,8 +187,25 @@ router.post('/dispatch', async (req, res) => {
         return res.status(400).json({ error: 'Conexão não encontrada ou desativada' });
     }
 
-    const userId = fullConnection.user.id;
+    // Verifica o plano do usuário na tabela subscriptions
+    const { data: subData, error: subError } = await supabase
+        .from('subscriptions')
+        .select('plano')
+        .eq('user_id', fullConnection.user_id)
+        .single();
 
+    if (subError || !subData) {
+        return res.status(400).json({ error: 'Plano do usuário não encontrado' });
+    }
+
+    if (subData.plano === 'basico') {
+        return res.status(200).json({ 
+            event: 'ignored', 
+            message: 'Eventos não processados para plano básico' 
+        });
+    }
+
+    const userId = fullConnection.user.id;
     const authUserid = fullConnection.user.auth_id;
 
     let enrichedEvent = {
