@@ -224,4 +224,27 @@ router.delete('/:id', authMiddleware, async (req, res) => {
   }
 });
 
+// --- BUSCA USER_ID POR CONNECTION ID ---
+router.get('/:id/user', authMiddleware, async (req, res) => {
+  const { id } = req.params;
+  
+  if (!id) return sendError(res, 400, 'ID da conexão é obrigatório.');
+
+  try {
+    const { data, error } = await supabase
+      .from('connections')
+      .select('user_id')
+      .eq('id', id)
+      .single();
+
+    if (error) throw error;
+    if (!data) return sendError(res, 404, 'Conexão não encontrada.');
+
+    res.json({ user_id: data.user_id });
+  } catch (err) {
+    console.error('Erro ao buscar user_id da conexão:', err);
+    sendError(res, 500, 'Erro ao buscar user_id da conexão.');
+  }
+});
+
 module.exports = router;
