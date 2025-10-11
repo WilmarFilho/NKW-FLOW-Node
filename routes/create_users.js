@@ -361,7 +361,6 @@ router.post('/webhook', express.raw({ type: 'application/json' }), async (req, r
           console.error('Erro ao enviar webhook para n8n:', webhookErr.message);
           // Não falha o processo se webhook falhar
         }
-
         break;
       }
 
