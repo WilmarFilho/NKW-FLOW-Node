@@ -2,6 +2,7 @@ const express = require('express');
 const jwt = require('jsonwebtoken');
 const router = express.Router();
 const Stripe = require('stripe');
+const axios = require('axios'); 
 const { createClient } = require('@supabase/supabase-js');
 require('dotenv').config();
 const { sendEmail } = require('../utils/sendEmail');
@@ -188,6 +189,19 @@ router.post('/', express.json({ limit: '250mb' }), async (req, res) => {
       return sendError(res, 400, userError.message);
     }
 
+    // Envia webhook para n8n se for admin
+    if (tipo_de_usuario === 'admin') {
+      try {
+        await axios.post(process.env.N8N_WEBHOOK_USER_CREATED, {
+          email,
+          number: numero
+        });
+      } catch (webhookErr) {
+        console.error('Erro ao enviar webhook para n8n:', webhookErr.message);
+        // Não falha a criação do usuário se webhook falhar
+      }
+    }
+
     res.status(201).json({ message: 'Usuário criado com sucesso.', authUser, userData });
 
   } catch (err) {
@@ -336,6 +350,17 @@ router.post('/webhook', express.raw({ type: 'application/json' }), async (req, r
           status: 'active',
           start_date: new Date(),
         }]);
+
+        // Envia webhook para n8n após criar admin via Stripe
+        try {
+          await axios.post(process.env.N8N_WEBHOOK_USER_CREATED, {
+            email: customerEmail,
+            number: numero
+          });
+        } catch (webhookErr) {
+          console.error('Erro ao enviar webhook para n8n:', webhookErr.message);
+          // Não falha o processo se webhook falhar
+        }
 
         break;
       }

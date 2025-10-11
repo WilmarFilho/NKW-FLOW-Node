@@ -174,7 +174,7 @@ router.put('/:id', authMiddleware, async (req, res) => {
     let allowedFields = [];
     if (authUser.tipo_de_usuario === 'admin') {
       allowedFields = [
-        'foto_perfil', 'nome', 'numero', 'tipo_de_usuario', 'status',
+        'foto_perfil', 'nome', 'tipo_de_usuario', 'status',
         'modo_tela', 'modo_side_bar', 'mostra_nome_mensagens', 'modo_notificacao_atendente',
         'notificacao_para_entrar_conversa', 'notificacao_necessidade_de_entrar_conversa',
         'notificacao_novo_chat', 'cidade', 'endereco', 'ref_code', 'referrals_count',
@@ -199,13 +199,21 @@ router.put('/:id', authMiddleware, async (req, res) => {
 
     if (error) return sendError(res, 500, error.message);
 
+    // Busca plano atualizado na tabela subscription
+    const { data: subscription, error: subscriptionError } = await supabase
+      .from('subscriptions')
+      .select('plano, status')
+      .eq('user_id', targetUserId)
+      .maybeSingle();
+
     // Limpa o cache do usuário ao atualizar
     await redis.del(cacheKey);
 
     return res.json({
-      message: 'Usuário atualizado com sucesso',
-      user: data,
-      token: newToken 
+      ...data,
+      plano: subscription?.plano,
+      subscription_status: subscription?.status,
+      token: newToken
     });
   } catch (err) {
     console.error('Erro inesperado ao atualizar usuário:', err);
