@@ -10,7 +10,6 @@ const agentsRoutes = require('./routes/agents');
 const connectionsRoutes = require('./routes/connections');
 const chatsRoutes = require('./routes/chats');
 const messagesRoutes = require('./routes/messages');
-const chats_readsRoutes = require('./routes/chats_reads');
 const uploadRoutes = require("./routes/upload");
 const create_usersRoutes = require("./routes/create_users"); // aqui está o webhook também
 const { router: eventsRoutes } = require('./routes/events');
@@ -44,7 +43,6 @@ app.use('/agents', authMiddleware, agentsRoutes);
 app.use('/connections', authMiddleware, connectionsRoutes);
 app.use('/chats', authMiddleware, chatsRoutes);
 app.use('/messages', authMiddleware, messagesRoutes);
-app.use('/chats_reads', authMiddleware, chats_readsRoutes);
 app.use('/upload', authMiddleware, uploadRoutes);
 app.use('/metrics', authMiddleware, metricsRoutes);
 

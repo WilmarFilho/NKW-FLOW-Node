@@ -22,19 +22,6 @@ const recentMsgActivity = new Map();
 
 const normalizeNumber = (remoteJid = "") => remoteJid.replace(/@s\.whatsapp\.net$/, "").trim();
 
-const makeKey = (connectionId, remoteJid) => `${connectionId}|${normalizeNumber(remoteJid)}`;
-
-function markMessageActivity(connectionId, remoteJid) {
-    if (!connectionId || !remoteJid) return;
-    recentMsgActivity.set(makeKey(connectionId, remoteJid), Date.now());
-}
-
-function shouldIgnoreChatsUpsert(connectionId, remoteJid) {
-    if (!connectionId || !remoteJid) return false;
-    const ts = recentMsgActivity.get(makeKey(connectionId, remoteJid));
-    return ts && (Date.now() - ts) <= DEBOUNCE_MS;
-}
-
 function extractRemoteJid(event, data) {
     if (event === 'chats.upsert') return Array.isArray(data) ? data[0]?.remoteJid : null;
     if (event === 'messages.upsert') return data?.key?.remoteJid || data?.remoteJid || null;
@@ -273,45 +260,9 @@ router.post('/dispatch', async (req, res) => {
 
     }
 
-    if (event === 'chats.upsert') {
-
-        const rjid = extractRemoteJid(event, data);
-
-        if (shouldIgnoreChatsUpsert(connection, rjid) || !rjid) {
-            enrichedEvent.event = 'error';
-            enrichedEvent.message = 'Ignorado chats.upsert (debounce)';
-        } else {
-            const contato_numero = normalizeNumber(rjid);
-
-            const { data: chatExistente, error: chatError } = await supabase
-                .from('chats')
-                .select('*')
-                .eq('contato_numero', contato_numero)
-                .eq('connection_id', connection)
-                .maybeSingle();
-
-            if (chatExistente) {
-                await supabase
-                    .from('chats_reads')
-                    .upsert(
-                        {
-                            chat_id: chatExistente.id,
-                            connection_id: connection,
-                            last_read_at: new Date().toISOString(),
-                        },
-                        { onConflict: ['chat_id', 'connection_id'] }
-                    );
-
-                enrichedEvent.chat = chatExistente;
-            }
-
-        }
-    }
-
     if (event === 'messages.upsert' || event === 'send.message') {
 
         const rjid = extractRemoteJid(event, data);
-        if (rjid && !/@g\.us$/.test(rjid)) markMessageActivity(connection, rjid);
 
         let contatoNumero = rjid.replaceAll('@s.whatsapp.net', '');
 
@@ -612,7 +563,6 @@ router.post('/dispatch', async (req, res) => {
         }
     }
 
-
     if (event === 'connection.update' && data.state === 'close') {
 
         const { data: attendantsData } = await supabase
@@ -711,14 +661,7 @@ router.get('/:user_id', async (req, res) => {
     });
 });
 
-
 module.exports = {
     router,
     eventClientsByUser
 };
-
-
-
-
-
-
