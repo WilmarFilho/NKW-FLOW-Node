@@ -40,7 +40,7 @@ app.use('/events', eventsRoutes);
 app.use('/users', authMiddleware, usersRoutes);
 app.use('/attendants', authMiddleware, attendantsRoutes);
 app.use('/agents', authMiddleware, agentsRoutes);
-app.use('/connections', authMiddleware, connectionsRoutes);
+app.use('/connections', connectionsRoutes); // já tem authMiddleware dentro
 app.use('/chats', authMiddleware, chatsRoutes);
 app.use('/messages', authMiddleware, messagesRoutes);
 app.use('/upload', authMiddleware, uploadRoutes);

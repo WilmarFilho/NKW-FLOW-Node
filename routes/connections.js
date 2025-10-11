@@ -225,7 +225,7 @@ router.delete('/:id', authMiddleware, async (req, res) => {
 });
 
 // --- BUSCA USER_ID POR CONNECTION ID ---
-router.get('/:id/user', authMiddleware, async (req, res) => {
+router.get('/:id/user', async (req, res) => {
   const { id } = req.params;
   
   if (!id) return sendError(res, 400, 'ID da conexão é obrigatório.');
