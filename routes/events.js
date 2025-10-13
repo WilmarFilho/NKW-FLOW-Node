@@ -580,10 +580,10 @@ router.post('/dispatch', async (req, res) => {
             tipoMensagem = 'imagem';
         } else if (data.message.audioMessage) {
             tipoMensagem = 'audio';
-        } else if (data.message.documentMessage.mimetype === 'application/pdf') {
+        } else if (data.message.documentMessage?.mimetype === 'application/pdf') {
             isDocumento = true;
             tipoMensagem = 'PDF';
-        } else if (data.message.documentMessage.mimetype === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet') {
+        } else if (data.message.documentMessage?.mimetype === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet') {
             tipoMensagem = 'XLS';
             isDocumento = true;
         } else if (
@@ -636,10 +636,10 @@ router.post('/dispatchColeta', async (req, res) => {
                 tipoMensagem = 'imagem';
             } else if (data.message.audioMessage) {
                 tipoMensagem = 'audio';
-            } else if (data.message.documentMessage.mimetype === 'application/pdf') {
+            } else if (data.message.documentMessage?.mimetype === 'application/pdf') {
                 isDocumento = true;
                 tipoMensagem = 'PDF';
-            } else if (data.message.documentMessage.mimetype === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet') {
+            } else if (data.message.documentMessage?.mimetype === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet') {
                 tipoMensagem = 'XLS';
                 isDocumento = true;
             } else if (
