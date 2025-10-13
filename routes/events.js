@@ -634,8 +634,10 @@ router.post('/dispatchColeta', async (req, res) => {
                 tipoMensagem = 'imagem';
             } else if (data.message.audioMessage) {
                 tipoMensagem = 'audio';
-            } else if (data.message.documentMessage) {
-                tipoMensagem = 'documento';
+            } else if (data.message.documentMessage.mimetype === 'application/pdf') {
+                tipoMensagem = 'PDF';
+            } else if (data.message.documentMessage.mimetype === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet') {
+                tipoMensagem = 'XLS';
             } else if (
                 data.message.conversation ||
                 data.message.extendedTextMessage?.text ||
