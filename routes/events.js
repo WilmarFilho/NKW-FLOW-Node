@@ -199,9 +199,9 @@ router.post('/dispatch', async (req, res) => {
     }
 
     if (subData.plano === 'basico') {
-        return res.status(200).json({ 
-            event: 'ignored', 
-            message: 'Eventos não processados para plano básico' 
+        return res.status(200).json({
+            event: 'ignored',
+            message: 'Eventos não processados para plano básico'
         });
     }
 
@@ -538,7 +538,7 @@ router.post('/dispatch', async (req, res) => {
         };
 
         enrichedEvent.chat = chatCompleto || chatExistente;
-        
+
     }
 
     if (event === 'messages.delete') {
@@ -606,6 +606,63 @@ router.post('/dispatch', async (req, res) => {
 
     return res.status(enrichedEvent.error ? 400 : 200).json(enrichedEvent);
 
+});
+
+
+router.post('/dispatchColeta', async (req, res) => {
+    const { connection, event, data } = req.body;
+
+    try {
+        const rjid = extractRemoteJid(event, data);
+
+        let contatoNumero = rjid.replaceAll('@s.whatsapp.net', '');
+
+        if (contatoNumero.endsWith('@lid')) {
+            contatoNumero = data?.key?.senderPn.replaceAll('@s.whatsapp.net', '');
+        }
+
+        // Remove sufixo do tipo ":63" se existir (ex: 556492954044:63 -> 556492954044)
+        if (/^\d+:\d+$/.test(contatoNumero)) {
+            contatoNumero = contatoNumero.split(':')[0];
+        }
+
+        // Busca o usuário na tabela users pelo número
+        const { data: userData, error: userError } = await supabase
+            .from('users')
+            .select('*')
+            .eq('numero', contatoNumero)
+            .maybeSingle();
+
+        if (userError) {
+            return res.status(500).json({
+                error: 'Erro ao buscar usuário',
+                details: userError.message
+            });
+        }
+
+        if (!userData) {
+            return res.status(404).json({
+                error: 'Usuário não encontrado para o número',
+                numero: contatoNumero
+            });
+        }
+
+        // Retorna o usuário, evento e data completos
+        return res.status(200).json({
+            user: userData,
+            event,
+            data,
+            numero_extraido: contatoNumero,
+            remote_jid: rjid
+        });
+
+    } catch (err) {
+        console.error('Erro no /dispatchColeta:', err);
+        return res.status(500).json({
+            error: 'Erro interno no servidor',
+            details: err.message
+        });
+    }
 });
 
 
