@@ -189,8 +189,20 @@ router.post('/', express.json({ limit: '250mb' }), async (req, res) => {
       return sendError(res, 400, userError.message);
     }
 
-    // Envia webhook para n8n se for admin
+    // Envia email de boas-vindas para novos admins
     if (tipo_de_usuario === 'admin') {
+      try {
+        await sendEmail(email, 'novo_cliente', {
+          nome,
+          email,
+          senha: password
+        });
+      } catch (emailErr) {
+        console.error('Erro ao enviar email de boas-vindas:', emailErr.message);
+        // Não falha a criação se email falhar
+      }
+
+      // Envia webhook para n8n
       try {
         await axios.post(process.env.N8N_WEBHOOK_USER_CREATED, {
           email,
@@ -247,8 +259,6 @@ router.post('/webhook', express.raw({ type: 'application/json' }), async (req, r
         let periodo;
 
         switch (priceId) {
-
-
           case 'price_1SEBOjDLO1TMGeDVPT9tyv52': // Anual
             plano = 'premium';
             periodo = 'anual';
@@ -261,8 +271,6 @@ router.post('/webhook', express.raw({ type: 'application/json' }), async (req, r
             plano = 'premium';
             periodo = 'diario';
             break;
-
-
           case 'price_1SEBQLDLO1TMGeDVwtIVTcks': // Anual
             plano = 'basico';
             periodo = 'anual';
@@ -271,8 +279,6 @@ router.post('/webhook', express.raw({ type: 'application/json' }), async (req, r
             plano = 'basico';
             periodo = 'mensal';
             break;
-
-
           case 'price_1SEBPhDLO1TMGeDVNw911b12': // Anual
             plano = 'intermediario';
             periodo = 'anual';
@@ -281,8 +287,6 @@ router.post('/webhook', express.raw({ type: 'application/json' }), async (req, r
             plano = 'intermediario';
             periodo = 'mensal';
             break;
-
-
           default:
             throw new Error(`Price ID não mapeado: ${priceId}`);
         }
@@ -320,22 +324,31 @@ router.post('/webhook', express.raw({ type: 'application/json' }), async (req, r
 
           if (userError) throw new Error(userError.message);
 
-          await sendEmail(
-            customerEmail,
-            'Bem-vindo!',
-            `Olá ${nome},\n\nSua senha temporária é: ${tempPassword}\n\nUse-a para acessar sua conta e depois altere no painel.`
-          );
+          // Envia email de boas-vindas usando template
+          try {
+            await sendEmail(customerEmail, 'novo_cliente', {
+              nome,
+              email: customerEmail,
+              senha: tempPassword
+            });
+          } catch (emailErr) {
+            console.error('Erro ao enviar email de boas-vindas:', emailErr.message);
+          }
 
           userId = userData.id;
         } else {
-
           await supabase.auth.admin.updateUser(existingUser.auth_id, { password: tempPassword });
 
-          await sendEmail(
-            customerEmail,
-            'Nova senha gerada',
-            `Olá ${existingUser.nome},\n\nSua nova senha é: ${tempPassword}\n\nRecomendamos alterá-la após o login.`
-          );
+          // Envia email com nova senha usando template
+          try {
+            await sendEmail(customerEmail, 'novo_cliente', {
+              nome: existingUser.nome,
+              email: customerEmail,
+              senha: tempPassword
+            });
+          } catch (emailErr) {
+            console.error('Erro ao enviar email com nova senha:', emailErr.message);
+          }
 
           userId = existingUser.id;
         }
@@ -354,18 +367,15 @@ router.post('/webhook', express.raw({ type: 'application/json' }), async (req, r
         // Envia webhook para n8n após criar admin via Stripe
         try {
           await axios.post(process.env.N8N_WEBHOOK_USER_CREATED, {
-            email: customerEmail,
             number: numero
           });
         } catch (webhookErr) {
           console.error('Erro ao enviar webhook para n8n:', webhookErr.message);
-          // Não falha o processo se webhook falhar
         }
         break;
       }
 
       case 'invoice.payment_failed': {
-
         const invoice = event.data.object;
         const subscriptionId = invoice.subscription;
 
@@ -386,12 +396,13 @@ router.post('/webhook', express.raw({ type: 'application/json' }), async (req, r
             .single();
 
           if (user) {
-            await sendEmail(
-              user.email,
-              'Falha no pagamento',
-              `Olá ${user.nome},\n\nIdentificamos uma falha no pagamento da sua assinatura. 
-Sua assinatura entrará em período de carência e será cancelada em 7 dias se o pagamento não for regularizado.\n\nAtenciosamente,\nEquipe`
-            );
+            try {
+              await sendEmail(user.email, 'falha_pagamento', {
+                nome: user.nome,
+              });
+            } catch (emailErr) {
+              console.error('Erro ao enviar email de falha de pagamento:', emailErr.message);
+            }
           }
         }
         break;
@@ -423,18 +434,21 @@ Sua assinatura entrará em período de carência e será cancelada em 7 dias se 
           const { data: user } = await supabase.from('users').select('auth_id, email, nome').eq('id', sub.user_id).single();
 
           if (user) {
+            // Envia email de cancelamento antes de remover dados
+            try {
+              await sendEmail(user.email, 'cancelamento', {
+                nome: user.nome,
+              });
+            } catch (emailErr) {
+              console.error('Erro ao enviar email de cancelamento:', emailErr.message);
+            }
+
             // Remove assinatura
             await supabase.from('subscriptions').delete().eq('stripe_subscription_id', subscription.id);
             // Remove usuário
             await supabase.from('users').delete().eq('id', sub.user_id);
             // Remove autenticação
             await supabase.auth.admin.deleteUser(user.auth_id);
-
-            await sendEmail(
-              user.email,
-              'Assinatura cancelada',
-              `Olá ${user.nome},\n\nSua assinatura foi cancelada e seus dados foram removidos conforme nossa política de privacidade.`
-            );
           }
         }
 

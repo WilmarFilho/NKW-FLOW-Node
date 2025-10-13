@@ -7,6 +7,12 @@ require('dotenv').config();
 
 const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_KEY);
 
+const Redis = require('ioredis');
+const redis = new Redis({
+  host: process.env.REDIS_HOST || 'redis',
+  port: process.env.REDIS_PORT || 6379,
+});
+
 // HELPER DE ERRO
 function sendError(res, status, message) {
   return res.status(status).json({ error: message });
@@ -14,8 +20,23 @@ function sendError(res, status, message) {
 
 // --- CRIA NOVA CONEXÃO ---
 router.post('/', authMiddleware, async (req, res) => {
-  const { nome, agente_id } = req.body;
+  const { nome, agente_id, numero } = req.body;
   const user_id = req.userId;
+
+  // Se existir o numero, adiciona 55 no começo se ainda não tiver, e valida formato
+  let formattedNumero = numero;
+  if (numero) {
+    // Remove caracteres não numéricos
+    formattedNumero = numero.replace(/\D/g, '');
+    // Adiciona 55 se não começar com 55
+    if (!formattedNumero.startsWith('55')) {
+      formattedNumero = '55' + formattedNumero;
+    }
+    // Verifica se ficou no formato correto (apenas dígitos, pelo menos 12 caracteres)
+    if (!/^\d{12,15}$/.test(formattedNumero)) {
+      return sendError(res, 400, 'Número inválido. Deve estar no formato 556492434104.');
+    }
+  }
 
   if (!user_id || !nome) {
     return sendError(res, 400, 'Nome e usuário são obrigatórios.');
@@ -61,16 +82,24 @@ router.post('/', authMiddleware, async (req, res) => {
     // Salvar conexão no Supabase 
     const { data, error } = await supabase
       .from('connections')
-      .insert([{ user_id, nome, numero: null, status: null, agente_id: agente_id || null }])
+      .insert([{ user_id, nome, numero: numero, status: null, agente_id: agente_id || null }])
       .select();
 
     if (error || !data || data.length === 0) throw error || new Error('Falha ao salvar conexão.');
 
     const instanceId = data[0].id;
 
+
+
     // Criar instância no Evolution
+    // Monta a URL do endpoint Evolution, adicionando ?number=numero se numero existir
+    let evolutionUrl = `${process.env.EVOLUTION_API_URL}/instance/create`;
+    if (formattedNumero) {
+      evolutionUrl += `?number=${encodeURIComponent(formattedNumero)}`;
+    }
+
     const evolutionResponse = await axios.post(
-      `${process.env.EVOLUTION_API_URL}/instance/create`,
+      evolutionUrl,
       {
         instanceName: instanceId,
         qrcode: true,
@@ -84,7 +113,7 @@ router.post('/', authMiddleware, async (req, res) => {
       { headers: { apikey: process.env.EVOLUTION_API_KEY } }
     );
 
-    res.status(201).json(evolutionResponse.data.qrcode.base64);
+    res.status(201).json(evolutionResponse.data.qrcode);
   } catch (err) {
     console.error('Erro ao criar conexão:', err.response?.data || err.message || err);
     sendError(res, 500, 'Erro ao criar conexão.');
@@ -211,7 +240,7 @@ router.delete('/:id', authMiddleware, async (req, res) => {
     if (user_id) {
       const cacheKey = `chats:${user_id}:0`;
       try {
-        await require('ioredis')().del(cacheKey);
+        await redis.del(cacheKey);
       } catch (cacheErr) {
         console.error('Erro ao limpar cache:', cacheErr.message || cacheErr);
       }
