@@ -601,6 +601,7 @@ router.post('/dispatch', async (req, res) => {
         return res.status(200).json({
             event: event,
             data: data,
+            subscription,
             isDocumento,
             tipo_mensagem: tipoMensagem,
             connection: fullConnection,
@@ -675,7 +676,6 @@ router.post('/dispatchColeta', async (req, res) => {
         // Retorna o usuário, evento, data completos e tipo da mensagem
         return res.status(200).json({
             user: userData,
-            subscription,
             event,
             data,
             numero_extraido: contatoNumero,
