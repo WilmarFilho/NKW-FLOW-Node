@@ -626,6 +626,25 @@ router.post('/dispatchColeta', async (req, res) => {
             contatoNumero = contatoNumero.split(':')[0];
         }
 
+        // Detecta o tipo da mensagem
+        let tipoMensagem = 'outros';
+        
+        if (data.message) {
+            if (data.message.imageMessage) {
+                tipoMensagem = 'imagem';
+            } else if (data.message.audioMessage) {
+                tipoMensagem = 'audio';
+            } else if (data.message.documentMessage) {
+                tipoMensagem = 'documento';
+            } else if (
+                data.message.conversation ||
+                data.message.extendedTextMessage?.text ||
+                data.message.ephemeralMessage?.message?.extendedTextMessage?.text
+            ) {
+                tipoMensagem = 'texto';
+            } 
+        }
+
         // Busca o usuário na tabela users pelo número
         const { data: userData, error: userError } = await supabase
             .from('users')
@@ -647,13 +666,14 @@ router.post('/dispatchColeta', async (req, res) => {
             });
         }
 
-        // Retorna o usuário, evento e data completos
+        // Retorna o usuário, evento, data completos e tipo da mensagem
         return res.status(200).json({
             user: userData,
             event,
             data,
             numero_extraido: contatoNumero,
-            remote_jid: rjid
+            remote_jid: rjid,
+            tipo_mensagem: tipoMensagem
         });
 
     } catch (err) {
