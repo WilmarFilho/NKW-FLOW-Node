@@ -78,7 +78,7 @@ router.post('/', authMiddleware, async (req, res) => {
         integration: 'WHATSAPP-BAILEYS',
         webhook: {
           url: `${process.env.N8N_HOST}/webhook/evolution`,
-          events: ['CONNECTION_UPDATE', 'MESSAGES_UPSERT', 'SEND_MESSAGE', 'CHATS_UPSERT', 'MESSAGES_DELETE'],
+          events: ['CONNECTION_UPDATE', 'MESSAGES_UPSERT', 'SEND_MESSAGE', 'MESSAGES_DELETE'],
         },
       },
       { headers: { apikey: process.env.EVOLUTION_API_KEY } }

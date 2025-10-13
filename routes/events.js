@@ -604,7 +604,41 @@ router.post('/dispatch', async (req, res) => {
         }
     }
 
-    return res.status(enrichedEvent.error ? 400 : 200).json(enrichedEvent);
+    // Detecta o tipo da mensagem
+    let tipoMensagem = 'outros';
+    let isDocumento = false;
+
+    if (data.message) {
+        if (data.message.imageMessage) {
+            tipoMensagem = 'imagem';
+        } else if (data.message.audioMessage) {
+            tipoMensagem = 'audio';
+        } else if (data.message.documentMessage.mimetype === 'application/pdf') {
+            isDocumento = true;
+            tipoMensagem = 'PDF';
+        } else if (data.message.documentMessage.mimetype === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet') {
+            tipoMensagem = 'XLS';
+            isDocumento = true;
+        } else if (
+            data.message.conversation ||
+            data.message.extendedTextMessage?.text ||
+            data.message.ephemeralMessage?.message?.extendedTextMessage?.text
+        ) {
+            tipoMensagem = 'texto';
+        }
+    }
+
+    if (enrichedEvent.error) {
+        return res.status(400).json(enrichedEvent);
+    } else {
+        return res.status(200).json({
+            event: event,
+            data: data,
+            isDocumento,
+            tipo_mensagem: tipoMensagem,
+            connection: fullConnection,
+        });
+    }
 
 });
 
@@ -628,23 +662,26 @@ router.post('/dispatchColeta', async (req, res) => {
 
         // Detecta o tipo da mensagem
         let tipoMensagem = 'outros';
-        
+        let isDocumento = false;
+
         if (data.message) {
             if (data.message.imageMessage) {
                 tipoMensagem = 'imagem';
             } else if (data.message.audioMessage) {
                 tipoMensagem = 'audio';
             } else if (data.message.documentMessage.mimetype === 'application/pdf') {
+                isDocumento = true;
                 tipoMensagem = 'PDF';
             } else if (data.message.documentMessage.mimetype === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet') {
                 tipoMensagem = 'XLS';
+                isDocumento = true;
             } else if (
                 data.message.conversation ||
                 data.message.extendedTextMessage?.text ||
                 data.message.ephemeralMessage?.message?.extendedTextMessage?.text
             ) {
                 tipoMensagem = 'texto';
-            } 
+            }
         }
 
         // Busca o usuário na tabela users pelo número
@@ -675,7 +712,8 @@ router.post('/dispatchColeta', async (req, res) => {
             data,
             numero_extraido: contatoNumero,
             remote_jid: rjid,
-            tipo_mensagem: tipoMensagem
+            tipo_mensagem: tipoMensagem,    
+            isDocumento
         });
 
     } catch (err) {
