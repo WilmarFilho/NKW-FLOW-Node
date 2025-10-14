@@ -239,7 +239,7 @@ router.post('/help', authMiddleware, async (req, res) => {
 
   try {
     // Faz requisição para o webhook do N8N
-    const response = await axios.post(`${process.env.N8N_HOST}/webhook/help`, {
+    const response = await axios.post(`${process.env.N8N_HOST}/webhook-test/help`, {
       mensagem: mensagem.trim(),
       user_id
     }, {
