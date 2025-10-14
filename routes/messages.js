@@ -249,8 +249,8 @@ router.post('/help', authMiddleware, async (req, res) => {
     });
 
     // O N8N agora retorna um array de respostas
-    console.log('Resposta do N8N:', response)
-    const respostas = response.data;
+    console.log('Resposta do N8N:', response.data.resposta);
+    const respostas = response.data.resposta;
 
     // Valida se é um array
     if (!Array.isArray(respostas)) {
