@@ -228,4 +228,50 @@ router.delete('/:id', authMiddleware, async (req, res) => {
   }
 });
 
+// --- TELA DE AJUDA - ENVIAR MENSAGEM PARA N8N ---
+router.post('/help', authMiddleware, async (req, res) => {
+  const { mensagem } = req.body;
+  const user_id = req.userId; // pega do token autenticado
+
+  if (!mensagem || typeof mensagem !== 'string') {
+    return res.status(400).json({ error: 'Mensagem é obrigatória e deve ser uma string.' });
+  }
+
+  try {
+    // Faz requisição para o webhook do N8N
+    const response = await axios.post(`${process.env.N8N_HOST}/webhook/help`, {
+      mensagem: mensagem.trim(),
+      user_id
+    }, {
+      headers: {
+        'Content-Type': 'application/json'
+      }
+    });
+
+    // O N8N agora retorna um array de respostas
+    const respostas = response.data;
+
+    // Valida se é um array
+    if (!Array.isArray(respostas)) {
+      console.warn('N8N retornou resposta que não é um array:', respostas);
+      return res.json({
+        respostas: [respostas] // Converte para array se não for
+      });
+    }
+
+    // Retorna o array de respostas para o front-end
+    return res.json({
+      respostas
+    });
+
+  } catch (err) {
+    console.error('Erro ao enviar mensagem para webhook de ajuda:', err.response?.data || err.message);
+  
+    return res.status(500).json({ 
+      error: 'Erro ao processar mensagem de ajuda',
+      details: err.response?.data || err.message
+    });
+  }
+});
+
 module.exports = router;

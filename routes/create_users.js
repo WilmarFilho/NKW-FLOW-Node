@@ -176,10 +176,7 @@ router.post('/', express.json({ limit: '250mb' }), async (req, res) => {
         modo_tela,
         modo_side_bar,
         mostra_nome_mensagens,
-        modo_notificacao_atendente,
         notificacao_para_entrar_conversa,
-        notificacao_necessidade_de_entrar_conversa,
-        notificacao_novo_chat
       }])
       .select()
       .single();
