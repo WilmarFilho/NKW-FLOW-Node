@@ -599,6 +599,7 @@ router.post('/dispatch', async (req, res) => {
         return res.status(400).json(enrichedEvent);
     } else {
         return res.status(200).json({
+            chat: enrichedEvent.chat || null,
             event: event,
             data: data,
             subscription,

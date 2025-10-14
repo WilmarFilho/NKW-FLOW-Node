@@ -175,9 +175,8 @@ router.put('/:id', authMiddleware, async (req, res) => {
     if (authUser.tipo_de_usuario === 'admin') {
       allowedFields = [
         'foto_perfil', 'nome', 'tipo_de_usuario', 'status',
-        'modo_tela', 'modo_side_bar', 'mostra_nome_mensagens', 'modo_notificacao_atendente',
-        'notificacao_para_entrar_conversa', 'notificacao_necessidade_de_entrar_conversa',
-        'notificacao_novo_chat', 'cidade', 'endereco', 'ref_code', 'referrals_count',
+        'modo_tela', 'modo_side_bar', 'mostra_nome_mensagens',
+        'notificacao_para_entrar_conversa', 'cidade', 'endereco', 'ref_code', 'referrals_count',
         'discount_percent', 'ai_trigger_word'
       ];
     } else {
