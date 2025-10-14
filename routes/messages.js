@@ -239,7 +239,7 @@ router.post('/help', authMiddleware, async (req, res) => {
 
   try {
     // Faz requisição para o webhook do N8N
-    const response = await axios.post(`${process.env.N8N_HOST}/webhook-test/help`, {
+    const response = await axios.post(`${process.env.N8N_HOST}/webhook/help`, {
       mensagem: mensagem.trim(),
       user_id
     }, {
@@ -249,7 +249,6 @@ router.post('/help', authMiddleware, async (req, res) => {
     });
 
     // O N8N agora retorna um array de respostas
-    console.log('Resposta do N8N:', response.data.resposta);
     const respostas = response.data.resposta;
 
     // Valida se é um array
