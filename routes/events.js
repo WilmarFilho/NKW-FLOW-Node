@@ -12,6 +12,9 @@ const jwt = require("jsonwebtoken");
 
 const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_KEY);
 
+// Cliente Supabase para banco RAG
+const supabaseRAG = createClient(process.env.SUPABASE_URL_RAG, process.env.SUPABASE_KEY_RAG);
+
 const eventClientsByUser = {};
 
 const BUCKET_NAME = "bucket_arquivos_medias";
@@ -609,10 +612,17 @@ router.post('/dispatch', async (req, res) => {
         }
     }
 
+    const { data: ragData, error: ragError } = await supabaseRAG
+        .from('rag_status')
+        .select('status_conhecimento')
+        .eq('user_id', fullConnection.user.id)
+        .maybeSingle();
+
     if (enrichedEvent.error) {
         return res.status(400).json(enrichedEvent);
     } else {
         return res.status(200).json({
+            ragData,
             numerosAtendentes,
             chat: enrichedEvent.chat || null,
             event: event,
