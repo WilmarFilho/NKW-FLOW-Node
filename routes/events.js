@@ -328,6 +328,7 @@ router.post('/dispatch', async (req, res) => {
                     .update({ ia_ativa: false })
                     .eq('id', chatExistente.id);
                 chatExistente.ia_ativa = false;
+                console.log(`IA desativada para o chat ${chatExistente.id} por mensagem do usuário.`);
             }
 
             // --- NOVA REGRA: Ativa IA se usuário enviar a palavra-chave ---
