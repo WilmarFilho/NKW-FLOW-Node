@@ -187,6 +187,20 @@ router.post('/dispatch', async (req, res) => {
         return res.status(400).json({ error: 'Conexão não encontrada ou desativada' });
     }
 
+    // Busca os números dos atendentes desta conexão
+    const { data: attendantsData, error: attendantsError } = await supabase
+        .from('attendants')
+        .select(`
+        user_id,
+        users!attendants_user_id_fkey(numero)
+    `)
+        .eq('connection_id', connection);
+
+    // Extrai apenas os números dos atendentes (filtra nulos)
+    const numerosAtendentes = attendantsData
+        ?.map(att => att.users?.numero)
+        .filter(numero => numero) || [];
+
     // Verifica o plano do usuário na tabela subscriptions
     const { data: subscription, error: subError } = await supabase
         .from('subscriptions')
@@ -328,7 +342,6 @@ router.post('/dispatch', async (req, res) => {
                     .update({ ia_ativa: false })
                     .eq('id', chatExistente.id);
                 chatExistente.ia_ativa = false;
-                console.log(`IA desativada para o chat ${chatExistente.id} por mensagem do usuário.`);
             }
 
             // --- NOVA REGRA: Ativa IA se usuário enviar a palavra-chave ---
@@ -600,6 +613,7 @@ router.post('/dispatch', async (req, res) => {
         return res.status(400).json(enrichedEvent);
     } else {
         return res.status(200).json({
+            numerosAtendentes,
             chat: enrichedEvent.chat || null,
             event: event,
             data: data,
@@ -612,6 +626,9 @@ router.post('/dispatch', async (req, res) => {
 
 });
 
+// Debounce para dispatchColeta
+const FLOOD_DEBOUNCE_MS = 5000; // 5 segundos
+const recentColetaActivity = new Map();
 
 router.post('/dispatchColeta', async (req, res) => {
     const { connection, event, data } = req.body;
@@ -629,6 +646,47 @@ router.post('/dispatchColeta', async (req, res) => {
         if (/^\d+:\d+$/.test(contatoNumero)) {
             contatoNumero = contatoNumero.split(':')[0];
         }
+
+        // Busca o usuário na tabela users pelo número
+        const { data: userData, error: userError } = await supabase
+            .from('users')
+            .select('*')
+            .eq('numero', contatoNumero)
+            .maybeSingle();
+
+        if (userError) {
+            return res.status(500).json({
+                error: 'Erro ao buscar usuário',
+                details: userError.message
+            });
+        }
+
+        if (!userData) {
+            return res.status(404).json({
+                error: 'Usuário não encontrado para o número',
+                numero: contatoNumero
+            });
+        }
+
+        // 🔥 Verifica flood/debounce por user_id
+        const userId = userData.id;
+        const now = Date.now();
+        const lastActivity = recentColetaActivity.get(userId);
+        let isFlood = false;
+
+        if (lastActivity && (now - lastActivity) < FLOOD_DEBOUNCE_MS) {
+            isFlood = true;
+        }
+
+        // Atualiza timestamp da última atividade
+        recentColetaActivity.set(userId, now);
+
+        // Limpa entradas antigas do Map (evita memory leak)
+        setTimeout(() => {
+            if (recentColetaActivity.get(userId) === now) {
+                recentColetaActivity.delete(userId);
+            }
+        }, FLOOD_DEBOUNCE_MS);
 
         // Detecta o tipo da mensagem
         let tipoMensagem = 'outros';
@@ -654,28 +712,7 @@ router.post('/dispatchColeta', async (req, res) => {
             }
         }
 
-        // Busca o usuário na tabela users pelo número
-        const { data: userData, error: userError } = await supabase
-            .from('users')
-            .select('*')
-            .eq('numero', contatoNumero)
-            .maybeSingle();
-
-        if (userError) {
-            return res.status(500).json({
-                error: 'Erro ao buscar usuário',
-                details: userError.message
-            });
-        }
-
-        if (!userData) {
-            return res.status(404).json({
-                error: 'Usuário não encontrado para o número',
-                numero: contatoNumero
-            });
-        }
-
-        // Retorna o usuário, evento, data completos e tipo da mensagem
+        // Retorna o usuário, evento, data completos, tipo da mensagem e isFlood
         return res.status(200).json({
             user: userData,
             event,
@@ -683,7 +720,8 @@ router.post('/dispatchColeta', async (req, res) => {
             numero_extraido: contatoNumero,
             remote_jid: rjid,
             tipo_mensagem: tipoMensagem,
-            isDocumento
+            isDocumento,
+            isFlood // 🔥 Novo campo indicando se é flood
         });
 
     } catch (err) {

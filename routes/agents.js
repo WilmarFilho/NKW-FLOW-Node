@@ -14,6 +14,9 @@ const sendError = (res, statusCode, message) => res.status(statusCode).json({ me
 // Criar cliente Supabase com chave de serviço
 const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_KEY);
 
+// Cliente Supabase para banco RAG
+const supabaseRAG = createClient(process.env.SUPABASE_URL_RAG, process.env.SUPABASE_KEY_RAG);
+
 // LISTA AGENTES APENAS PARA ADMINS
 router.get('/', authMiddleware, async (req, res) => {
   try {
@@ -62,10 +65,39 @@ router.get('/', authMiddleware, async (req, res) => {
       agentsData = data;
     }
 
-    // Salva no cache por 30 minutos
-    await redis.set(cacheKey, JSON.stringify(agentsData), 'EX', 1800);
+    // Busca status e resumo da base de conhecimento no banco RAG
+    let ragStatus = null;
 
-    res.json(agentsData);
+    if (subData.plano !== 'basico') {
+      try {
+       
+        const { data: ragData, error: ragError } = await supabaseRAG
+          .from('rag_status')
+          .select('status_conhecimento, resumo')
+          .eq('user_id', userId)
+          .maybeSingle();
+
+      } catch (ragErr) {
+        console.error('Erro ao buscar status RAG:', ragErr);
+        ragStatus = {
+          status: 'erro',
+          resumo: 'Erro ao acessar base de conhecimento',
+          total_documentos: 0,
+          ultimo_processamento: null
+        };
+      }
+    }
+
+    // Monta resposta final com agentes e status RAG
+    const response = {
+      agents: agentsData,
+      rag_status: ragStatus
+    };
+
+    // Salva no cache por 30 minutos
+    await redis.set(cacheKey, JSON.stringify(response), 'EX', 1800);
+
+    res.json(response);
   } catch (err) {
     console.error('Erro inesperado ao listar agentes:', err);
     return sendError(res, 500, 'Erro inesperado ao listar agentes.');
