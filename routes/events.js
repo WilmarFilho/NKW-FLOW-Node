@@ -194,10 +194,15 @@ router.post('/dispatch', async (req, res) => {
     const { data: attendantsData, error: attendantsError } = await supabase
         .from('attendants')
         .select(`
-        user_id,
-        users!attendants_user_id_fkey(numero)
-    `)
-        .eq('connection_id', connection);
+    user_id,
+    users!attendants_user_id_fkey (
+      numero,
+      status
+    )
+  `)
+        .eq('connection_id', connection)
+        .eq('users.status', true);
+
 
     // Extrai apenas os números dos atendentes (filtra nulos)
     const numerosAtendentes = attendantsData
@@ -301,6 +306,56 @@ router.post('/dispatch', async (req, res) => {
         if (/^\d+:\d+$/.test(contatoNumero)) {
             contatoNumero = contatoNumero.split(':')[0];
         }
+
+        // 🧠 NOVA REGRA: Desativa IA do chat se o número remetente for de um atendente do mesmo user
+        try {
+            // Busca todos os atendentes vinculados ao mesmo usuário dono da conexão
+            const { data: atendentesDoUser, error: atendentesUserError } = await supabase
+                .from('attendants')
+                .select(`
+            users!attendants_user_id_fkey(numero),
+            connection:connections(user_id)
+        `)
+                .eq('connections.user_id', fullConnection.user_id);
+
+            if (atendentesUserError) {
+                console.error('Erro ao buscar atendentes do usuário:', atendentesUserError.message);
+            } else if (atendentesDoUser?.length) {
+                // Extrai e normaliza números
+                const numerosAtendentesUser = atendentesDoUser
+                    .map(att => att.users?.numero)
+                    .filter(Boolean)
+                    .map(n => n.replace(/\D/g, ''));
+
+                const numeroNormalizado = contatoNumero.replace(/\D/g, '');
+
+                // Verifica se o remetente é um atendente
+                if (numerosAtendentesUser.includes(numeroNormalizado)) {
+                    console.log(`🟠 Mensagem recebida de um atendente (${numeroNormalizado}). Desativando IA do chat...`);
+
+                    // Busca o chat existente dessa conversa
+                    const { data: chatExistente } = await supabase
+                        .from('chats')
+                        .select('id, ia_ativa')
+                        .eq('connection_id', fullConnection.id)
+                        .eq('contato_numero', numeroNormalizado)
+                        .maybeSingle();
+
+                    // Se o chat existir e estiver com IA ativa, desativa
+                    if (chatExistente && chatExistente.ia_ativa) {
+                        await supabase
+                            .from('chats')
+                            .update({ ia_ativa: false })
+                            .eq('id', chatExistente.id);
+
+                        console.log(`IA desativada para o chat ${chatExistente.id}.`);
+                    }
+                }
+            }
+        } catch (err) {
+            console.error('Erro ao validar se número é de atendente do usuário:', err);
+        }
+
 
         const connectionId = fullConnection.id;
 
@@ -817,3 +872,5 @@ module.exports = {
     router,
     eventClientsByUser
 };
+
+
