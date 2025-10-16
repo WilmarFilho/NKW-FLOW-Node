@@ -70,12 +70,14 @@ router.get('/', authMiddleware, async (req, res) => {
 
     if (subData.plano !== 'basico') {
       try {
-       
+
         const { data: ragData, error: ragError } = await supabaseRAG
           .from('rag_status')
           .select('status_conhecimento, resumo')
           .eq('user_id', userId)
           .maybeSingle();
+
+        ragStatus = ragData
 
       } catch (ragErr) {
         console.error('Erro ao buscar status RAG:', ragErr);

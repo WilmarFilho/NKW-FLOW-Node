@@ -2,7 +2,7 @@ const express = require('express');
 const jwt = require('jsonwebtoken');
 const router = express.Router();
 const Stripe = require('stripe');
-const axios = require('axios'); 
+const axios = require('axios');
 const { createClient } = require('@supabase/supabase-js');
 require('dotenv').config();
 const { sendEmail } = require('../utils/sendEmail');
@@ -353,12 +353,12 @@ router.post('/webhook', express.raw({ type: 'application/json' }), async (req, r
         // Criar assinatura
         await supabase.from('subscriptions').insert([{
           user_id: userId,
-          stripe_subscription_id: session.subscription,
-          stripe_customer_id: session.customer,
           plano,
           periodo,
           status: 'active',
-          start_date: new Date(),
+          stripe_subscription_id: session.subscription,
+          stripe_customer_id: session.customer,
+          updated_at: new Date(),
         }]);
 
         // Envia webhook para n8n após criar admin via Stripe
