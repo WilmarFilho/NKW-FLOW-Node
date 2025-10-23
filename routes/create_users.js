@@ -54,7 +54,6 @@ const checkAdminJWT = async (req) => {
  * 🟢 Criação manual de usuários
  */
 router.post('/', express.json({ limit: '250mb' }), async (req, res) => {
-
   try {
     const {
       email,
@@ -79,6 +78,29 @@ router.post('/', express.json({ limit: '250mb' }), async (req, res) => {
     } = req.body;
 
     let adminUserId = null;
+
+    // ⚙️ Ajuste: valida e formata número
+    let numeroFormatado = String(numero || '').replace(/\D/g, ''); // mantém apenas dígitos
+
+    if (!numeroFormatado) {
+      return sendError(res, 400, 'Número de telefone é obrigatório.');
+    }
+
+    // adiciona prefixo 55 se ainda não existir
+    if (!numeroFormatado.startsWith('55')) {
+      numeroFormatado = `55${numeroFormatado}`;
+    }
+
+    // valida formato final (deve ter exatamente 12 dígitos)
+    if (!/^\d{12}$/.test(numeroFormatado)) {
+      return sendError(
+        res,
+        400,
+        `Número inválido: ${numeroFormatado}. O formato deve ser 55 + DDD + número (12 dígitos).`
+      );
+    }
+
+    // a partir daqui usamos sempre numeroFormatado
 
     if (tipo_de_usuario === 'admin') {
       if (!checkInternalKey(req)) {
@@ -123,13 +145,9 @@ router.post('/', express.json({ limit: '250mb' }), async (req, res) => {
 
       // Define limites por plano
       let maxAtendentes = 0;
-      if (subData.plano === 'basico') {
-        maxAtendentes = 2;
-      } else if (subData.plano === 'intermediario') {
-        maxAtendentes = 4;
-      } else if (subData.plano === 'premium') {
-        maxAtendentes = 6;
-      }
+      if (subData.plano === 'basico') maxAtendentes = 2;
+      else if (subData.plano === 'intermediario') maxAtendentes = 4;
+      else if (subData.plano === 'premium') maxAtendentes = 6;
 
       // Conta quantos atendentes o admin já tem
       const { count, error: countError } = await supabase
@@ -142,7 +160,11 @@ router.post('/', express.json({ limit: '250mb' }), async (req, res) => {
       }
 
       if (count >= maxAtendentes) {
-        return sendError(res, 400, `Limite de ${maxAtendentes} atendentes atingido para seu plano.`);
+        return sendError(
+          res,
+          400,
+          `Limite de ${maxAtendentes} atendentes atingido para seu plano.`
+        );
       }
     } else {
       return sendError(res, 400, 'Tipo de usuário inválido.');
@@ -167,7 +189,7 @@ router.post('/', express.json({ limit: '250mb' }), async (req, res) => {
         tipo_de_usuario,
         cidade,
         endereco,
-        numero,
+        numero: numeroFormatado, // ✅ usa o número validado
         foto_perfil,
         ref_code,
         referrals_count,
@@ -189,30 +211,22 @@ router.post('/', express.json({ limit: '250mb' }), async (req, res) => {
     // Envia email de boas-vindas para novos admins
     if (tipo_de_usuario === 'admin') {
       try {
-        await sendEmail(email, 'novo_cliente', {
-          nome,
-          email,
-          senha: password
-        });
+        await sendEmail(email, 'novo_cliente', { nome, email, senha: password });
       } catch (emailErr) {
         console.error('Erro ao enviar email de boas-vindas:', emailErr.message);
-        // Não falha a criação se email falhar
       }
 
-      // Envia webhook para n8n
       try {
         await axios.post(process.env.N8N_WEBHOOK_USER_CREATED, {
           email,
-          number: numero
+          number: numeroFormatado,
         });
       } catch (webhookErr) {
         console.error('Erro ao enviar webhook para n8n:', webhookErr.message);
-        // Não falha a criação do usuário se webhook falhar
       }
     }
 
     res.status(201).json({ message: 'Usuário criado com sucesso.', authUser, userData });
-
   } catch (err) {
     console.error('Erro inesperado ao criar usuário manual:', err);
     return sendError(res, 500, 'Erro interno no servidor.');
