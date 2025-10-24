@@ -748,7 +748,7 @@ router.post('/dispatch', async (req, res) => {
 
             aggregateHttpFlood(
                 fullConnection.id,
-                numero,
+                rjid,
                 { // enrichedEvent object
                     ragData,
                     numerosAtendentes,
