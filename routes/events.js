@@ -76,8 +76,6 @@ async function flushBucket(key) {
     httpFloodBuckets.delete(key);
 }
 
-const normalizeNumber = (remoteJid = "") => remoteJid.replace(/@s\.whatsapp\.net$/, "").trim();
-
 function extractRemoteJid(event, data) {
     if (event === 'chats.upsert') return Array.isArray(data) ? data[0]?.remoteJid : null;
     if (event === 'messages.upsert') return data?.key?.remoteJid || data?.remoteJid || null;
@@ -744,7 +742,6 @@ router.post('/dispatch', async (req, res) => {
         } else {
             // 🔹 Pega o número (normalizado) do contato
             const rjid = extractRemoteJid(event, data);
-            const numero = normalizeNumber(rjid);
 
             // 1. Define a URL de webhook para esta rota
             const dispatchWebhookUrl = process.env.N8N_HOST + '/webhook/evolution';
