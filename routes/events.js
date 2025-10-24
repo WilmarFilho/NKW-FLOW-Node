@@ -744,7 +744,7 @@ router.post('/dispatch', async (req, res) => {
             const rjid = extractRemoteJid(event, data);
 
             // 1. Define a URL de webhook para esta rota
-            const dispatchWebhookUrl = process.env.N8N_HOST + '/webhook-test/evolution';
+            const dispatchWebhookUrl = process.env.N8N_HOST + '/webhook/evolution';
 
             aggregateHttpFlood(
                 fullConnection.id,
