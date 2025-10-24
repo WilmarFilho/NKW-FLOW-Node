@@ -833,7 +833,7 @@ router.post('/dispatchColeta', async (req, res) => {
             }
         }
 
-        const coletaWebhookUrl = process.env.N8N_HOST + '/webhook/coleta';
+        const coletaWebhookUrl = process.env.N8N_HOST + '/webhook-test/coleta';
 
         // 2. Monta o payload (evento enriquecido)
         const enrichedEvent = {
