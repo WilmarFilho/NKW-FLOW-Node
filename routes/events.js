@@ -727,17 +727,10 @@ router.post('/dispatch', async (req, res) => {
     if (enrichedEvent.error) {
         return res.status(400).json(enrichedEvent);
     } else {
-        // 🔹 Pega o número (normalizado) do contato
-        const rjid = extractRemoteJid(event, data);
-        const numero = normalizeNumber(rjid);
 
-        // 1. Define a URL de webhook para esta rota
-        const dispatchWebhookUrl = process.env.N8N_HOST + '/webhook/evolution';
 
-        aggregateHttpFlood(
-            fullConnection.id,
-            numero,
-            { // enrichedEvent object
+        if (event === 'connection_update') {
+            await axios.post(process.env.N8N_HOST + '/webhook/evolution', {
                 ragData,
                 numerosAtendentes,
                 chat: enrichedEvent.chat || null,
@@ -747,10 +740,33 @@ router.post('/dispatch', async (req, res) => {
                 isDocumento,
                 tipo_mensagem: tipoMensagem,
                 connection: fullConnection,
-            },
-            res,
-            dispatchWebhookUrl // 2. Passa a URL para a função
-        );
+            },);
+        } else {
+            // 🔹 Pega o número (normalizado) do contato
+            const rjid = extractRemoteJid(event, data);
+            const numero = normalizeNumber(rjid);
+
+            // 1. Define a URL de webhook para esta rota
+            const dispatchWebhookUrl = process.env.N8N_HOST + '/webhook/evolution';
+
+            aggregateHttpFlood(
+                fullConnection.id,
+                numero,
+                { // enrichedEvent object
+                    ragData,
+                    numerosAtendentes,
+                    chat: enrichedEvent.chat || null,
+                    event: event,
+                    data: data,
+                    subscription,
+                    isDocumento,
+                    tipo_mensagem: tipoMensagem,
+                    connection: fullConnection,
+                },
+                res,
+                dispatchWebhookUrl // 2. Passa a URL para a função
+            );
+        }
 
         // Retorno imediato pro Evolution
         return res.status(200).json({ status: 'received' });
@@ -835,8 +851,8 @@ router.post('/dispatchColeta', async (req, res) => {
 
         // 3. Chama a função de agregação
         aggregateHttpFlood(
-            connection,     
-            contatoNumero, 
+            connection,
+            contatoNumero,
             enrichedEvent,
             res,
             coletaWebhookUrl
