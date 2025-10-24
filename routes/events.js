@@ -20,8 +20,61 @@ const eventClientsByUser = {};
 const BUCKET_NAME = "bucket_arquivos_medias";
 const MEDIA_FOLDER = "media";
 
-const DEBOUNCE_MS = 500;
-const recentMsgActivity = new Map();
+const HTTP_FLOOD_TIMEOUT = 10000;
+const httpFloodBuckets = new Map();
+
+function aggregateHttpFlood(connectionId, numero, enrichedEvent, res, webhookUrl) {
+    const key = `${connectionId}:${numero}`;
+    const now = Date.now();
+
+    if (!httpFloodBuckets.has(key)) {
+        // cria novo bucket
+        const timer = setTimeout(() => flushBucket(key), HTTP_FLOOD_TIMEOUT);
+        httpFloodBuckets.set(key, {
+            events: [enrichedEvent],
+            timer,
+            res,
+            lastUpdate: now,
+            webhookUrl: webhookUrl // 2. Armazenamos a URL no bucket
+        });
+    } else {
+        // atualiza bucket existente
+        const bucket = httpFloodBuckets.get(key);
+        bucket.events.push(enrichedEvent);
+        bucket.lastUpdate = now;
+
+        // reinicia o timer (debounce)
+        clearTimeout(bucket.timer);
+        bucket.timer = setTimeout(() => flushBucket(key), HTTP_FLOOD_TIMEOUT);
+    }
+}
+
+async function flushBucket(key) {
+    const bucket = httpFloodBuckets.get(key);
+    if (!bucket) return;
+
+    // 3. Lemos a URL de dentro do bucket
+    const targetWebhookUrl = bucket.webhookUrl;
+
+    const groupedResponse = {
+        isFlood: bucket.events.length > 1,
+        groupedCount: bucket.events.length,
+        events: bucket.events,
+    };
+
+    try {
+        // ✅ Envia agrupamento para o Webhook correto
+        if (targetWebhookUrl) {
+            await axios.post(targetWebhookUrl, groupedResponse);
+        } else {
+            console.warn('⚠️ Webhook URL não configurada no bucket. Nenhum envio realizado.');
+        }
+    } catch (err) {
+        console.error(`❌ Erro ao enviar agrupamento para ${targetWebhookUrl}:`, err.message);
+    }
+
+    httpFloodBuckets.delete(key);
+}
 
 const normalizeNumber = (remoteJid = "") => remoteJid.replace(/@s\.whatsapp\.net$/, "").trim();
 
@@ -174,7 +227,7 @@ async function processarMensagemComMedia(data, connectionId, remetente, tipoMedi
 
 router.post('/dispatch', async (req, res) => {
 
-    const { connection, event, data } = req.body;
+    const { instance: connection, event, data } = req.body;
 
     const { data: fullConnection } = await supabase
         .from('connections')
@@ -331,7 +384,6 @@ router.post('/dispatch', async (req, res) => {
 
                 // Verifica se o remetente é um atendente
                 if (numerosAtendentesUser.includes(numeroNormalizado)) {
-                    console.log(`🟠 Mensagem recebida de um atendente (${numeroNormalizado}). Desativando IA do chat...`);
 
                     // Busca o chat existente dessa conversa
                     const { data: chatExistente } = await supabase
@@ -348,7 +400,6 @@ router.post('/dispatch', async (req, res) => {
                             .update({ ia_ativa: false })
                             .eq('id', chatExistente.id);
 
-                        console.log(`IA desativada para o chat ${chatExistente.id}.`);
                     }
                 }
             }
@@ -676,27 +727,40 @@ router.post('/dispatch', async (req, res) => {
     if (enrichedEvent.error) {
         return res.status(400).json(enrichedEvent);
     } else {
-        return res.status(200).json({
-            ragData,
-            numerosAtendentes,
-            chat: enrichedEvent.chat || null,
-            event: event,
-            data: data,
-            subscription,
-            isDocumento,
-            tipo_mensagem: tipoMensagem,
-            connection: fullConnection,
-        });
+        // 🔹 Pega o número (normalizado) do contato
+        const rjid = extractRemoteJid(event, data);
+        const numero = normalizeNumber(rjid);
+
+        // 1. Define a URL de webhook para esta rota
+        const dispatchWebhookUrl = process.env.N8N_HOST + '/webhook/evolution';
+
+        aggregateHttpFlood(
+            fullConnection.id,
+            numero,
+            { // enrichedEvent object
+                ragData,
+                numerosAtendentes,
+                chat: enrichedEvent.chat || null,
+                event: event,
+                data: data,
+                subscription,
+                isDocumento,
+                tipo_mensagem: tipoMensagem,
+                connection: fullConnection,
+            },
+            res,
+            dispatchWebhookUrl // 2. Passa a URL para a função
+        );
+
+        // Retorno imediato pro Evolution
+        return res.status(200).json({ status: 'received' });
     }
 
 });
 
-// Debounce para dispatchColeta
-const FLOOD_DEBOUNCE_MS = 5000; // 5 segundos
-const recentColetaActivity = new Map();
-
 router.post('/dispatchColeta', async (req, res) => {
-    const { connection, event, data } = req.body;
+
+    const { instance: connection, event, data } = req.body;
 
     try {
         const rjid = extractRemoteJid(event, data);
@@ -707,7 +771,7 @@ router.post('/dispatchColeta', async (req, res) => {
             contatoNumero = data?.key?.senderPn.replaceAll('@s.whatsapp.net', '');
         }
 
-        // Remove sufixo do tipo ":63" se existir (ex: 556492954044:63 -> 556492954044)
+        // Remove sufixo do tipo ":63" se existir
         if (/^\d+:\d+$/.test(contatoNumero)) {
             contatoNumero = contatoNumero.split(':')[0];
         }
@@ -733,32 +797,11 @@ router.post('/dispatchColeta', async (req, res) => {
             });
         }
 
-        // 🔥 Verifica flood/debounce por user_id
-        const userId = userData.id;
-        const now = Date.now();
-        const lastActivity = recentColetaActivity.get(userId);
-        let isFlood = false;
-
-        if (lastActivity && (now - lastActivity) < FLOOD_DEBOUNCE_MS) {
-            isFlood = true;
-        }
-
-        // Atualiza timestamp da última atividade
-        recentColetaActivity.set(userId, now);
-
-        // Limpa entradas antigas do Map (evita memory leak)
-        setTimeout(() => {
-            if (recentColetaActivity.get(userId) === now) {
-                recentColetaActivity.delete(userId);
-            }
-        }, FLOOD_DEBOUNCE_MS);
-
-        // Detecta o tipo da mensagem
         let tipoMensagem = 'outros';
         let isDocumento = false;
 
         if (data.message) {
-            if (data.message.imageMessage) {
+            if (data.message.imageMessage && data.message.documentMessage?.mimetype === 'image/jpeg' && data.message.documentMessage?.mimetype === 'image/png') {
                 tipoMensagem = 'imagem';
             } else if (data.message.audioMessage) {
                 tipoMensagem = 'audio';
@@ -777,8 +820,10 @@ router.post('/dispatchColeta', async (req, res) => {
             }
         }
 
-        // Retorna o usuário, evento, data completos, tipo da mensagem e isFlood
-        return res.status(200).json({
+        const coletaWebhookUrl = process.env.N8N_HOST + '/webhook/coleta';
+
+        // 2. Monta o payload (evento enriquecido)
+        const enrichedEvent = {
             user: userData,
             event,
             data,
@@ -786,8 +831,19 @@ router.post('/dispatchColeta', async (req, res) => {
             remote_jid: rjid,
             tipo_mensagem: tipoMensagem,
             isDocumento,
-            isFlood // 🔥 Novo campo indicando se é flood
-        });
+        };
+
+        // 3. Chama a função de agregação
+        aggregateHttpFlood(
+            connection,     
+            contatoNumero, 
+            enrichedEvent,
+            res,
+            coletaWebhookUrl
+        );
+
+        // 4. Retorno imediato pro Evolution
+        return res.status(200).json({ status: 'received' });
 
     } catch (err) {
         console.error('Erro no /dispatchColeta:', err);
@@ -797,7 +853,6 @@ router.post('/dispatchColeta', async (req, res) => {
         });
     }
 });
-
 
 router.get('/:user_id', async (req, res) => {
     const { user_id } = req.params;
@@ -872,5 +927,3 @@ module.exports = {
     router,
     eventClientsByUser
 };
-
-

@@ -106,7 +106,7 @@ router.post('/', authMiddleware, async (req, res) => {
         groupsIgnore: true,
         integration: 'WHATSAPP-BAILEYS',
         webhook: {
-          url: `${process.env.N8N_HOST}/webhook/evolution`,
+          url: `${process.env.NODE_HOST}/events/dispatch`,
           events: ['CONNECTION_UPDATE', 'MESSAGES_UPSERT', 'SEND_MESSAGE', 'MESSAGES_DELETE'],
         },
       },

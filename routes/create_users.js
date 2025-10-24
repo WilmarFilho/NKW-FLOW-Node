@@ -218,7 +218,6 @@ router.post('/', express.json({ limit: '250mb' }), async (req, res) => {
 
       try {
         await axios.post(process.env.N8N_WEBHOOK_USER_CREATED, {
-          email,
           number: numeroFormatado,
         });
       } catch (webhookErr) {
