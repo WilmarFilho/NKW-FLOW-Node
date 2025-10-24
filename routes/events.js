@@ -20,7 +20,7 @@ const eventClientsByUser = {};
 const BUCKET_NAME = "bucket_arquivos_medias";
 const MEDIA_FOLDER = "media";
 
-const HTTP_FLOOD_TIMEOUT = 10000;
+const HTTP_FLOOD_TIMEOUT = 15000;
 const httpFloodBuckets = new Map();
 
 function aggregateHttpFlood(connectionId, numero, enrichedEvent, res, webhookUrl) {
@@ -744,7 +744,7 @@ router.post('/dispatch', async (req, res) => {
             const rjid = extractRemoteJid(event, data);
 
             // 1. Define a URL de webhook para esta rota
-            const dispatchWebhookUrl = process.env.N8N_HOST + '/webhook/evolution';
+            const dispatchWebhookUrl = process.env.N8N_HOST + '/webhook-test/evolution';
 
             aggregateHttpFlood(
                 fullConnection.id,
@@ -833,7 +833,7 @@ router.post('/dispatchColeta', async (req, res) => {
             }
         }
 
-        const coletaWebhookUrl = process.env.N8N_HOST + '/webhook-test/coleta';
+        const coletaWebhookUrl = process.env.N8N_HOST + '/webhook/coleta';
 
         // 2. Monta o payload (evento enriquecido)
         const enrichedEvent = {
@@ -845,8 +845,6 @@ router.post('/dispatchColeta', async (req, res) => {
             tipo_mensagem: tipoMensagem,
             isDocumento,
         };
-
-        console.log(enrichedEvent)
 
         // 3. Chama a função de agregação
         aggregateHttpFlood(
