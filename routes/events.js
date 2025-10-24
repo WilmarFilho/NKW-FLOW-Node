@@ -846,6 +846,8 @@ router.post('/dispatchColeta', async (req, res) => {
             isDocumento,
         };
 
+        console.log(enrichedEvent)
+
         // 3. Chama a função de agregação
         aggregateHttpFlood(
             connection,
