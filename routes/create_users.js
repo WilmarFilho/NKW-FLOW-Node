@@ -86,17 +86,32 @@ router.post('/', express.json({ limit: '250mb' }), async (req, res) => {
       return sendError(res, 400, 'Número de telefone é obrigatório.');
     }
 
-    // adiciona prefixo 55 se ainda não existir
-    if (!numeroFormatado.startsWith('55')) {
-      numeroFormatado = `55${numeroFormatado}`;
+    // ---- INÍCIO DA NOVA LÓGICA ----
+
+    // 1. Remove o prefixo 55 se já existir, para tratar apenas o número local
+    if (numeroFormatado.startsWith('55')) {
+      numeroFormatado = numeroFormatado.substring(2);
     }
 
-    // valida formato final (deve ter exatamente 12 dígitos)
+    // 2. Verifica se o número local tem 11 dígitos (DDD + 9 + 8 dígitos)
+    // Ex: 64992434104
+    if (numeroFormatado.length === 11 && numeroFormatado.charAt(2) === '9') {
+      const ddd = numeroFormatado.substring(0, 2);
+      const numeroSem9 = numeroFormatado.substring(3);
+      numeroFormatado = `${ddd}${numeroSem9}`; // Transforma em 10 dígitos (Ex: 6492434104)
+    }
+
+    // 3. Adiciona o prefixo 55 (agora o número local deve ter 10 dígitos)
+    numeroFormatado = `55${numeroFormatado}`;
+
+    // ---- FIM DA NOVA LÓGICA ----
+
+    // valida formato final (deve ter exatamente 12 dígitos: 55 + 10)
     if (!/^\d{12}$/.test(numeroFormatado)) {
       return sendError(
         res,
         400,
-        `Número inválido: ${numeroFormatado}. O formato deve ser 55 + DDD + número (12 dígitos).`
+        `Número inválido: ${numero}. O formato final esperado é 55 + DDD + número (12 dígitos).`
       );
     }
 
@@ -219,6 +234,7 @@ router.post('/', express.json({ limit: '250mb' }), async (req, res) => {
       try {
         await axios.post(process.env.N8N_WEBHOOK_USER_CREATED, {
           number: numeroFormatado,
+          userId: userData.id
         });
       } catch (webhookErr) {
         console.error('Erro ao enviar webhook para n8n:', webhookErr.message);
@@ -267,6 +283,42 @@ router.post('/webhook', express.raw({ type: 'application/json' }), async (req, r
 
         let plano;
         let periodo;
+
+        // ⚙️ Ajuste: valida e formata número
+        let numeroFormatado = String(numero || '').replace(/\D/g, ''); // mantém apenas dígitos
+
+        if (!numeroFormatado) {
+          return sendError(res, 400, 'Número de telefone é obrigatório.');
+        }
+
+        // ---- INÍCIO DA NOVA LÓGICA ----
+
+        // 1. Remove o prefixo 55 se já existir, para tratar apenas o número local
+        if (numeroFormatado.startsWith('55')) {
+          numeroFormatado = numeroFormatado.substring(2);
+        }
+
+        // 2. Verifica se o número local tem 11 dígitos (DDD + 9 + 8 dígitos)
+        // Ex: 64992434104
+        if (numeroFormatado.length === 11 && numeroFormatado.charAt(2) === '9') {
+          const ddd = numeroFormatado.substring(0, 2);
+          const numeroSem9 = numeroFormatado.substring(3);
+          numeroFormatado = `${ddd}${numeroSem9}`; // Transforma em 10 dígitos (Ex: 6492434104)
+        }
+
+        // 3. Adiciona o prefixo 55 (agora o número local deve ter 10 dígitos)
+        numeroFormatado = `55${numeroFormatado}`;
+
+        // ---- FIM DA NOVA LÓGICA ----
+
+        // valida formato final (deve ter exatamente 12 dígitos: 55 + 10)
+        if (!/^\d{12}$/.test(numeroFormatado)) {
+          return sendError(
+            res,
+            400,
+            `Número inválido: ${numero}. O formato final esperado é 55 + DDD + número (12 dígitos).`
+          );
+        }
 
         switch (priceId) {
           case 'price_1SEBOjDLO1TMGeDVPT9tyv52': // Anual
@@ -326,7 +378,7 @@ router.post('/webhook', express.raw({ type: 'application/json' }), async (req, r
               nome,
               endereco,
               cidade,
-              numero,
+              numeroFormatado,
               tipo_de_usuario,
             }])
             .select()
@@ -374,10 +426,14 @@ router.post('/webhook', express.raw({ type: 'application/json' }), async (req, r
           updated_at: new Date(),
         }]);
 
+
+
+
         // Envia webhook para n8n após criar admin via Stripe
         try {
           await axios.post(process.env.N8N_WEBHOOK_USER_CREATED, {
-            number: numero
+            number: numeroFormatado,
+            userId: userData.id
           });
         } catch (webhookErr) {
           console.error('Erro ao enviar webhook para n8n:', webhookErr.message);
