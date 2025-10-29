@@ -254,11 +254,14 @@ router.post('/dispatch', async (req, res) => {
         .eq('connection_id', connection)
         .eq('users.status', true);
 
-
     // Extrai apenas os números dos atendentes (filtra nulos)
-    const numerosAtendentes = attendantsData
+    let numerosAtendentes = attendantsData
         ?.map(att => att.users?.numero)
         .filter(numero => numero) || [];
+
+    if (!fullConnection.user.notificacao_para_entrar_conversa) {
+        numerosAtendentes = null
+    }
 
     // Verifica o plano do usuário na tabela subscriptions
     const { data: subscription, error: subError } = await supabase
@@ -444,12 +447,35 @@ router.post('/dispatch', async (req, res) => {
                 data.key.fromMe &&
                 chatExistente.ia_ativa
             ) {
-                await supabase
-                    .from('chats')
-                    .update({ ia_ativa: false })
-                    .eq('id', chatExistente.id);
-                chatExistente.ia_ativa = false;
+                try {
+                    // 🔎 Verifica se já existe pelo menos uma mensagem do remetente = 'Usuário' neste chat
+                    const { count: mensagensUsuario, error: countError } = await supabase
+                        .from('messages')
+                        .select('id', { count: 'exact', head: true })
+                        .eq('chat_id', chatExistente.id)
+                        .eq('remetente', 'Usuário');
+
+                    if (countError) {
+                        console.error('Erro ao contar mensagens do usuário:', countError.message);
+                    }
+
+                    // ✅ Só desativa a IA se houver ao menos uma mensagem do tipo 'Usuário'
+                    if (mensagensUsuario > 1) {
+                        await supabase
+                            .from('chats')
+                            .update({ ia_ativa: false })
+                            .eq('id', chatExistente.id);
+                        chatExistente.ia_ativa = false;
+                    } else {
+                        console.log(
+                            `IA mantida ativa: chat ${chatExistente.id} ainda não possui mensagens do tipo 'Usuário'.`
+                        );
+                    }
+                } catch (err) {
+                    console.error('Erro ao verificar mensagens do chat antes de desativar IA:', err);
+                }
             }
+
 
             // --- NOVA REGRA: Ativa IA se usuário enviar a palavra-chave ---
             if (

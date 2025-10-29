@@ -90,53 +90,106 @@ router.patch('/:id', authMiddleware, async (req, res) => {
     const { id } = req.params;
     const updateBody = req.body;
 
-    if (!(await isAdmin(admin_id))) return res.status(403).json({ error: 'Apenas admins podem atualizar atendentes.' });
+    if (!(await isAdmin(admin_id)))
+      return res.status(403).json({ error: 'Apenas admins podem atualizar atendentes.' });
 
+    // --- Busca atendente ---
     const { data: attendant, error: findError } = await supabase
       .from('attendants')
       .select('user_id, connection_id')
       .eq('id', id)
       .single();
-    if (findError || !attendant) return res.status(404).json({ error: 'Atendente não encontrado.' });
+    if (findError || !attendant)
+      return res.status(404).json({ error: 'Atendente não encontrado.' });
 
     const updatesUser = {};
     const updatesAttendant = {};
     const userFields = ['nome', 'numero', 'status'];
 
-    userFields.forEach(field => {
+    // --- Validação e padronização do número ---
+    if ('numero' in updateBody) {
+      let numero = updateBody.numero?.toString().replace(/\D/g, ''); // remove caracteres não numéricos
+
+      if (!numero) {
+        return res.status(400).json({ error: 'Número inválido. Digite apenas números.' });
+      }
+
+      // Remove prefixo 55 se já existir
+      if (numero.startsWith('55')) {
+        numero = numero.substring(2);
+      }
+
+      // Se tiver 11 dígitos e o terceiro for 9, remove o 9 extra
+      if (numero.length === 11 && numero.charAt(2) === '9') {
+        const ddd = numero.substring(0, 2);
+        const numeroSem9 = numero.substring(3);
+        numero = `${ddd}${numeroSem9}`;
+      }
+
+      // Adiciona o prefixo 55
+      const numeroFormatado = `55${numero}`;
+
+      // Verifica formato final
+      if (!/^\d{12}$/.test(numeroFormatado)) {
+        return res.status(400).json({
+          error: 'Número inválido. O formato esperado é 55 + DDD + número (12 dígitos).',
+        });
+      }
+
+      // Atualiza o body com o número formatado
+      updateBody.numero = numeroFormatado;
+    }
+
+    // --- Define campos do usuário ---
+    userFields.forEach((field) => {
       if (field in updateBody) updatesUser[field] = updateBody[field];
     });
 
+    // --- Atualiza email no Auth ---
     if (updateBody.email) {
-      const { error: authError } = await supabase.auth.admin.updateUserById(attendant.user_id, { email: updateBody.email });
-      if (authError) return res.status(500).json({ error: 'Erro ao atualizar email no Auth.' });
+      const { error: authError } = await supabase.auth.admin.updateUserById(attendant.user_id, {
+        email: updateBody.email,
+      });
+      if (authError)
+        return res.status(500).json({ error: 'Erro ao atualizar email no Auth.' });
       updatesUser.email = updateBody.email;
     }
 
+    // --- Atualiza senha no Auth ---
     if (updateBody.password) {
-      const { error: passError } = await supabase.auth.admin.updateUserById(attendant.user_id, { password: updateBody.password });
-      if (passError) return res.status(500).json({ error: 'Erro ao atualizar senha no Auth.' });
+      const { error: passError } = await supabase.auth.admin.updateUserById(attendant.user_id, {
+        password: updateBody.password,
+      });
+      if (passError)
+        return res.status(500).json({ error: 'Erro ao atualizar senha no Auth.' });
     }
 
-    if ('connection_id' in updateBody) updatesAttendant.connection_id = updateBody.connection_id;
+    // --- Atualiza conexão ---
+    if ('connection_id' in updateBody) {
+      updatesAttendant.connection_id = updateBody.connection_id;
+    }
 
+    // --- Atualiza dados do usuário ---
     if (Object.keys(updatesUser).length > 0) {
       const { error: userError } = await supabase
         .from('users')
         .update(updatesUser)
         .eq('auth_id', attendant.user_id);
-      if (userError) return res.status(500).json({ error: 'Erro ao atualizar dados do usuário.' });
+      if (userError)
+        return res.status(500).json({ error: 'Erro ao atualizar dados do usuário.' });
     }
 
+    // --- Atualiza dados do atendente ---
     if (Object.keys(updatesAttendant).length > 0) {
       const { error: attError } = await supabase
         .from('attendants')
         .update(updatesAttendant)
         .eq('id', id);
-      if (attError) return res.status(500).json({ error: 'Erro ao atualizar atendente.' });
+      if (attError)
+        return res.status(500).json({ error: 'Erro ao atualizar atendente.' });
     }
 
-    // Limpa cache dos atendentes do admin
+    // --- Limpa cache ---
     await redis.del(`attendants:${admin_id}`);
 
     res.status(200).json({ message: 'Atendente atualizado com sucesso.' });

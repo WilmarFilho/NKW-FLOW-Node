@@ -86,36 +86,34 @@ router.post('/', express.json({ limit: '250mb' }), async (req, res) => {
       return sendError(res, 400, 'Número de telefone é obrigatório.');
     }
 
-    // ---- INÍCIO DA NOVA LÓGICA ----
+    // ---- INÍCIO DA LÓGICA AJUSTADA ----
 
-    // 1. Remove o prefixo 55 se já existir, para tratar apenas o número local
+    // 1. Remove prefixo "+" ou "55" se já existir
     if (numeroFormatado.startsWith('55')) {
       numeroFormatado = numeroFormatado.substring(2);
     }
 
-    // 2. Verifica se o número local tem 11 dígitos (DDD + 9 + 8 dígitos)
-    // Ex: 64992434104
+    // 2. Remove o nono dígito extra, se existir (ex: 64992434104 → 6492434104)
     if (numeroFormatado.length === 11 && numeroFormatado.charAt(2) === '9') {
       const ddd = numeroFormatado.substring(0, 2);
       const numeroSem9 = numeroFormatado.substring(3);
-      numeroFormatado = `${ddd}${numeroSem9}`; // Transforma em 10 dígitos (Ex: 6492434104)
+      numeroFormatado = `${ddd}${numeroSem9}`;
     }
 
-    // 3. Adiciona o prefixo 55 (agora o número local deve ter 10 dígitos)
+    // 3. Adiciona novamente o prefixo 55 (ficando 12 dígitos no total)
     numeroFormatado = `55${numeroFormatado}`;
 
-    // ---- FIM DA NOVA LÓGICA ----
+    // ---- FIM DA LÓGICA AJUSTADA ----
 
-    // valida formato final (deve ter exatamente 12 dígitos: 55 + 10)
+    // 4. Valida formato final (deve ter exatamente 12 dígitos)
     if (!/^\d{12}$/.test(numeroFormatado)) {
       return sendError(
         res,
         400,
-        `Número inválido: ${numero}. O formato final esperado é 55 + DDD + número (12 dígitos).`
+        `Número inválido: ${numero}. O formato final esperado é 55 + DDD + número (12 dígitos, sem o nono dígito).`
       );
     }
 
-    // a partir daqui usamos sempre numeroFormatado
 
     if (tipo_de_usuario === 'admin') {
       if (!checkInternalKey(req)) {
@@ -283,7 +281,7 @@ router.post('/webhook', express.raw({ type: 'application/json' }), async (req, r
 
         let plano;
         let periodo;
-
+        
         // ⚙️ Ajuste: valida e formata número
         let numeroFormatado = String(numero || '').replace(/\D/g, ''); // mantém apenas dígitos
 
@@ -291,32 +289,31 @@ router.post('/webhook', express.raw({ type: 'application/json' }), async (req, r
           return sendError(res, 400, 'Número de telefone é obrigatório.');
         }
 
-        // ---- INÍCIO DA NOVA LÓGICA ----
+        // ---- INÍCIO DA LÓGICA AJUSTADA ----
 
-        // 1. Remove o prefixo 55 se já existir, para tratar apenas o número local
+        // 1. Remove prefixo "+" ou "55" se já existir
         if (numeroFormatado.startsWith('55')) {
           numeroFormatado = numeroFormatado.substring(2);
         }
 
-        // 2. Verifica se o número local tem 11 dígitos (DDD + 9 + 8 dígitos)
-        // Ex: 64992434104
+        // 2. Remove o nono dígito extra, se existir (ex: 64992434104 → 6492434104)
         if (numeroFormatado.length === 11 && numeroFormatado.charAt(2) === '9') {
           const ddd = numeroFormatado.substring(0, 2);
           const numeroSem9 = numeroFormatado.substring(3);
-          numeroFormatado = `${ddd}${numeroSem9}`; // Transforma em 10 dígitos (Ex: 6492434104)
+          numeroFormatado = `${ddd}${numeroSem9}`;
         }
 
-        // 3. Adiciona o prefixo 55 (agora o número local deve ter 10 dígitos)
+        // 3. Adiciona novamente o prefixo 55 (ficando 12 dígitos no total)
         numeroFormatado = `55${numeroFormatado}`;
 
-        // ---- FIM DA NOVA LÓGICA ----
+        // ---- FIM DA LÓGICA AJUSTADA ----
 
-        // valida formato final (deve ter exatamente 12 dígitos: 55 + 10)
+        // 4. Valida formato final (deve ter exatamente 12 dígitos)
         if (!/^\d{12}$/.test(numeroFormatado)) {
           return sendError(
             res,
             400,
-            `Número inválido: ${numero}. O formato final esperado é 55 + DDD + número (12 dígitos).`
+            `Número inválido: ${numero}. O formato final esperado é 55 + DDD + número (12 dígitos, sem o nono dígito).`
           );
         }
 

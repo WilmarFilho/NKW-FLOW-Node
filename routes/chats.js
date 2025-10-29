@@ -35,20 +35,24 @@ router.get("/", authMiddleware, async (req, res) => {
       .maybeSingle();
 
     let attendantFilter = null;
+
     if (attendant_id) {
-      const { data } = await supabase
+      const { data: attendantInfo, error: attendantErr } = await supabase
         .from("attendants")
-        .select("connection_id")
+        .select("connection_id, user_id")
         .eq("user_id", attendant_id)
         .maybeSingle();
-      attendantFilter = data;
+
+      if (attendantErr) throw attendantErr;
+      if (attendantInfo) {
+        attendantFilter = attendantInfo;
+      }
     }
 
     let query = supabase.from("connections").select("id");
+
     if (connection_id) {
       query = query.in("id", connection_id.split(",").map((i) => i.trim()));
-    } else if (attendantFilter?.connection_id) {
-      query = query.eq("id", attendantFilter.connection_id);
     } else if (attendant?.connection_id) {
       query = query.eq("id", attendant.connection_id);
     } else {
@@ -56,7 +60,9 @@ router.get("/", authMiddleware, async (req, res) => {
     }
 
     const { data: conexoes } = await query;
+
     if (!conexoes?.length) return res.json({ chats: [], nextCursor: null });
+
     const connectionIds = conexoes.map((c) => c.id);
 
     // 2️⃣ Buscar 7 chats
@@ -68,6 +74,13 @@ router.get("/", authMiddleware, async (req, res) => {
       .in("connection_id", connectionIds)
       .order("ultima_atualizacao", { ascending: false })
       .limit(limit);
+
+    // aplica o filtro do atendente
+    if (attendantFilter?.connection_id) {
+      chatQuery = chatQuery
+        .eq("connection_id", attendantFilter.connection_id)
+        .eq("user_id", attendantFilter.user_id);
+    }
 
     if (cursor) {
       const decodedCursor = Buffer.from(cursor, "base64").toString("utf8");
@@ -92,16 +105,16 @@ router.get("/", authMiddleware, async (req, res) => {
     const [users, messages] = await Promise.all([
 
       donoIds.length
-      ? supabase.from("users").select("id, nome").in("id", donoIds)
-      : { data: [] },
+        ? supabase.from("users").select("id, nome").in("id", donoIds)
+        : { data: [] },
 
       supabase
-      .from("messages")
-      .select(
-        "chat_id, mensagem, mimetype, remetente"
-      )
-      .in("chat_id", chatIds)
-      .order("criado_em", { ascending: false }),
+        .from("messages")
+        .select(
+          "chat_id, mensagem, mimetype, remetente"
+        )
+        .in("chat_id", chatIds)
+        .order("criado_em", { ascending: false }),
 
     ]);
 
@@ -110,7 +123,7 @@ router.get("/", authMiddleware, async (req, res) => {
     for (const chatId of chatIds) mensagensPorChat[chatId] = [];
     for (const msg of messages.data || []) {
       if (mensagensPorChat[msg.chat_id].length === 0) {
-      mensagensPorChat[msg.chat_id].push(msg);
+        mensagensPorChat[msg.chat_id].push(msg);
       }
     }
 
@@ -135,7 +148,7 @@ router.get("/", authMiddleware, async (req, res) => {
       const last = chatsCompletos[chatsCompletos.length - 1];
       nextCursor = Buffer.from(last.ultima_atualizacao || "").toString("base64");
     }
-    
+
     const result = { chats: chatsCompletos, nextCursor };
 
     res.json(result);
