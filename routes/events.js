@@ -751,10 +751,11 @@ router.post('/dispatch', async (req, res) => {
         .maybeSingle();
 
     if (enrichedEvent.error) {
+        console.log('erro')
         return res.status(400).json(enrichedEvent);
     } else {
 
-
+            console.log('Du certo')
         if (event === 'connection_update') {
             await axios.post(process.env.N8N_HOST + '/webhook/evolution', {
                 ragData,
