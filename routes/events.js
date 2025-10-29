@@ -231,7 +231,7 @@ router.post('/dispatch', async (req, res) => {
         .from('connections')
         .select(`
                 *,
-                user:users(id, auth_id, nome, email),
+                user:users(id, auth_id, nome, email, notificacao_para_entrar_conversa),
                 agente:agents(id, tipo_de_agente, prompt_do_agente)
             `)
         .eq('id', connection)
@@ -260,8 +260,10 @@ router.post('/dispatch', async (req, res) => {
         .filter(numero => numero) || [];
 
     if (!fullConnection.user.notificacao_para_entrar_conversa) {
-        numerosAtendentes = null
+        numerosAtendentes = []
     }
+
+    console.log(fullConnection.user.notificacao_para_entrar_conversa)
 
     console.log('oi')
 
@@ -755,7 +757,7 @@ router.post('/dispatch', async (req, res) => {
         return res.status(400).json(enrichedEvent);
     } else {
 
-            console.log('Du certo')
+            console.log(event)
         if (event === 'connection_update') {
             await axios.post(process.env.N8N_HOST + '/webhook/evolution', {
                 ragData,
@@ -774,6 +776,8 @@ router.post('/dispatch', async (req, res) => {
 
             // 1. Define a URL de webhook para esta rota
             const dispatchWebhookUrl = process.env.N8N_HOST + '/webhook/evolution';
+
+            console.log('Du certooooooooooo')
 
             aggregateHttpFlood(
                 fullConnection.id,
