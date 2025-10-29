@@ -263,6 +263,8 @@ router.post('/dispatch', async (req, res) => {
         numerosAtendentes = null
     }
 
+    console.log('oi')
+
     // Verifica o plano do usuário na tabela subscriptions
     const { data: subscription, error: subError } = await supabase
         .from('subscriptions')
