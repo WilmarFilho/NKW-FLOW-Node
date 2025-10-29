@@ -263,10 +263,6 @@ router.post('/dispatch', async (req, res) => {
         numerosAtendentes = []
     }
 
-    console.log(fullConnection.user.notificacao_para_entrar_conversa)
-
-    console.log('oi')
-
     // Verifica o plano do usuário na tabela subscriptions
     const { data: subscription, error: subError } = await supabase
         .from('subscriptions')
@@ -756,9 +752,7 @@ router.post('/dispatch', async (req, res) => {
         console.log('erro')
         return res.status(400).json(enrichedEvent);
     } else {
-
-            console.log(event)
-        if (event === 'connection_update') {
+        if (event === 'connection.update') {
             await axios.post(process.env.N8N_HOST + '/webhook/evolution', {
                 ragData,
                 numerosAtendentes,
@@ -776,8 +770,6 @@ router.post('/dispatch', async (req, res) => {
 
             // 1. Define a URL de webhook para esta rota
             const dispatchWebhookUrl = process.env.N8N_HOST + '/webhook/evolution';
-
-            console.log('Du certooooooooooo')
 
             aggregateHttpFlood(
                 fullConnection.id,
