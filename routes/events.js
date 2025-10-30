@@ -694,7 +694,7 @@ router.post('/dispatch', async (req, res) => {
         }
     }
 
-    if (event === 'connection.update' && data.state === 'close') {
+    if ( (event === 'connection.update' && data.state === 'close') || (event === 'connection.update' && data.state === 'connecting' && fullConnection.status) ) {
 
         const { data: attendantsData } = await supabase
             .from('attendants')
