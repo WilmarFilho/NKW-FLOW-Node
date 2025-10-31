@@ -227,6 +227,8 @@ router.post('/dispatch', async (req, res) => {
 
     const { instance: connection, event, data } = req.body;
 
+    console.log('Chegou evento: ', connection, ' + ', event, ' + ', data)
+
     const { data: fullConnection } = await supabase
         .from('connections')
         .select(`
@@ -694,7 +696,7 @@ router.post('/dispatch', async (req, res) => {
         }
     }
 
-    if ( (event === 'connection.update' && data.state === 'close') || (event === 'connection.update' && data.state === 'connecting' && fullConnection.status) ) {
+    if ( (event === 'connection.update' && data.state === 'close') ) { //|| (event === 'connection.update' && data.state === 'connecting' && fullConnection.status)
 
         const { data: attendantsData } = await supabase
             .from('attendants')

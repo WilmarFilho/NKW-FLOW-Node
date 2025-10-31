@@ -104,6 +104,8 @@ router.post('/', authMiddleware, async (req, res) => {
         instanceName: instanceId,
         qrcode: true,
         groupsIgnore: true,
+        alwaysOnline: true,
+        readMessages: true,
         integration: 'WHATSAPP-BAILEYS',
         webhook: {
           url: `${process.env.NODE_HOST}/events/dispatch`,
