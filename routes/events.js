@@ -27,7 +27,11 @@ function aggregateHttpFlood(connectionId, numero, enrichedEvent, res, webhookUrl
     const key = `${connectionId}:${numero}`;
     const now = Date.now();
 
+    console.log('Caiu no aggregate: ', enrichedEvent)
+
     if (!httpFloodBuckets.has(key)) {
+         console.log('Caiu no if do aggregate: ', enrichedEvent)
+
         // cria novo bucket
         const timer = setTimeout(() => flushBucket(key), HTTP_FLOOD_TIMEOUT);
         httpFloodBuckets.set(key, {
@@ -38,6 +42,8 @@ function aggregateHttpFlood(connectionId, numero, enrichedEvent, res, webhookUrl
             webhookUrl: webhookUrl // 2. Armazenamos a URL no bucket
         });
     } else {
+         console.log('Caiu no else do aggregate: ', enrichedEvent)
+
         // atualiza bucket existente
         const bucket = httpFloodBuckets.get(key);
         bucket.events.push(enrichedEvent);
@@ -62,10 +68,14 @@ async function flushBucket(key) {
         events: bucket.events,
     };
 
+     console.log('Caiu no flush: ', groupedResponse)
+
+
     try {
         // ✅ Envia agrupamento para o Webhook correto
         if (targetWebhookUrl) {
             await axios.post(targetWebhookUrl, groupedResponse);
+            console.log('mandou pro n8n')
         } else {
             console.warn('⚠️ Webhook URL não configurada no bucket. Nenhum envio realizado.');
         }
