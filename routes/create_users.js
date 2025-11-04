@@ -375,7 +375,7 @@ router.post('/webhook', express.raw({ type: 'application/json' }), async (req, r
               nome,
               endereco,
               cidade,
-              numeroFormatado,
+              numero: numeroFormatado,
               tipo_de_usuario,
             }])
             .select()
