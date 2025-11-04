@@ -412,6 +412,8 @@ router.post('/webhook', express.raw({ type: 'application/json' }), async (req, r
           userId = existingUser.id;
         }
 
+        console.log(userId, plano, periodo)
+
         // Criar assinatura
         await supabase.from('subscriptions').insert([{
           user_id: userId,
@@ -423,6 +425,8 @@ router.post('/webhook', express.raw({ type: 'application/json' }), async (req, r
           updated_at: new Date(),
         }]);
 
+        console.log('foi')
+
 
 
 
@@ -430,7 +434,7 @@ router.post('/webhook', express.raw({ type: 'application/json' }), async (req, r
         try {
           await axios.post(process.env.N8N_WEBHOOK_USER_CREATED, {
             number: numeroFormatado,
-            userId: userData.id
+            userId
           });
         } catch (webhookErr) {
           console.error('Erro ao enviar webhook para n8n:', webhookErr.message);
