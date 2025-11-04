@@ -30,7 +30,7 @@ function aggregateHttpFlood(connectionId, numero, enrichedEvent, res, webhookUrl
     console.log('Caiu no aggregate: ', enrichedEvent)
 
     if (!httpFloodBuckets.has(key)) {
-         console.log('Caiu no if do aggregate: ', enrichedEvent)
+        console.log('Caiu no if do aggregate: ', enrichedEvent)
 
         // cria novo bucket
         const timer = setTimeout(() => flushBucket(key), HTTP_FLOOD_TIMEOUT);
@@ -42,7 +42,7 @@ function aggregateHttpFlood(connectionId, numero, enrichedEvent, res, webhookUrl
             webhookUrl: webhookUrl // 2. Armazenamos a URL no bucket
         });
     } else {
-         console.log('Caiu no else do aggregate: ', enrichedEvent)
+        console.log('Caiu no else do aggregate: ', enrichedEvent)
 
         // atualiza bucket existente
         const bucket = httpFloodBuckets.get(key);
@@ -68,7 +68,7 @@ async function flushBucket(key) {
         events: bucket.events,
     };
 
-     console.log('Caiu no flush: ', groupedResponse)
+    console.log('Caiu no flush: ', groupedResponse)
 
 
     try {
@@ -706,28 +706,17 @@ router.post('/dispatch', async (req, res) => {
         }
     }
 
-    if ( (event === 'connection.update' && data.state === 'close') ) { //|| (event === 'connection.update' && data.state === 'connecting' && fullConnection.status)
+    if ((event === 'connection.update' && data.state === 'close')) {
 
-        const { data: attendantsData } = await supabase
-            .from('attendants')
-            .select('user_id')
-            .eq('connection_id', connection);
-
-        const authIds = attendantsData?.map(a => a.user_id) || [];
-
-        await supabase
+        const { data: updatedConnection, error } = await supabase
             .from('connections')
-            .delete()
-            .eq('id', connection);
+            .update({
+                status: false
+            })
+            .eq('id', connection)
+            .select('*')
+            .maybeSingle();
 
-
-        for (const authId of authIds) {
-            try {
-                await supabase.auth.admin.deleteUser(authId);
-            } catch (err) {
-                console.error(`Erro ao deletar auth.user ${authId}:`, err.message || err);
-            }
-        }
     }
 
     // Detecta o tipo da mensagem

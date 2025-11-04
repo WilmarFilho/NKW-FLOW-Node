@@ -173,14 +173,14 @@ router.get('/', authMiddleware, async (req, res) => {
 // --- ATUALIZAR CONEXÃO ---
 router.put('/:id', authMiddleware, async (req, res) => {
   const { id } = req.params;
-  const { nome, status, agente_id } = req.body;
+  const { nome, agente_id } = req.body;
 
   if (!id) return sendError(res, 400, 'ID da conexão é obrigatório.');
 
   try {
     const { data, error } = await supabase
       .from('connections')
-      .update({ nome, status, agente_id })
+      .update({ nome, agente_id })
       .eq('id', id)
       .select();
 
