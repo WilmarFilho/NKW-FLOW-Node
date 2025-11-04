@@ -328,7 +328,7 @@ router.post('/webhook', express.raw({ type: 'application/json' }), async (req, r
             break;
           case 'price_1SEBOyDLO1TMGeDVdyT1Dj9g': // Diario Testes
             plano = 'premium';
-            periodo = 'diario';
+            periodo = 'mensal';
             break;
           case 'price_1SEBQLDLO1TMGeDVwtIVTcks': // Anual
             plano = 'basico';
@@ -412,7 +412,7 @@ router.post('/webhook', express.raw({ type: 'application/json' }), async (req, r
           userId = existingUser.id;
         }
 
-        console.log(userId, plano, periodo)
+       
 
         // Criar assinatura
         await supabase.from('subscriptions').insert([{
@@ -425,15 +425,10 @@ router.post('/webhook', express.raw({ type: 'application/json' }), async (req, r
           updated_at: new Date(),
         }]);
 
-        console.log('foi')
-
-
-
-
         // Envia webhook para n8n após criar admin via Stripe
         try {
           await axios.post(process.env.N8N_WEBHOOK_USER_CREATED, {
-            number: numeroFormatado,
+            numero: numeroFormatado,
             userId
           });
         } catch (webhookErr) {
