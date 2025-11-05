@@ -20,7 +20,7 @@ const eventClientsByUser = {};
 const BUCKET_NAME = "bucket_arquivos_medias";
 const MEDIA_FOLDER = "media";
 
-const HTTP_FLOOD_TIMEOUT = 15000;
+const HTTP_FLOOD_TIMEOUT = 25000;
 const httpFloodBuckets = new Map();
 
 function aggregateHttpFlood(connectionId, numero, enrichedEvent, res, webhookUrl) {
@@ -765,7 +765,7 @@ router.post('/dispatch', async (req, res) => {
                 tipo_mensagem: tipoMensagem,
                 connection: fullConnection,
             },);
-        } else {
+        } if (event === 'messages.upsert') {
             // 🔹 Pega o número (normalizado) do contato
             const rjid = extractRemoteJid(event, data);
 
