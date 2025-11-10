@@ -67,13 +67,14 @@ router.get('/', authMiddleware, async (req, res) => {
 
     // Busca status e resumo da base de conhecimento no banco RAG
     let ragStatus = null;
+    
 
     if (subData.plano !== 'basico') {
       try {
 
         const { data: ragData, error: ragError } = await supabaseRAG
           .from('rag_status')
-          .select('status_conhecimento, resumo')
+          .select('*')
           .eq('user_id', userId)
           .maybeSingle();
 
@@ -97,7 +98,7 @@ router.get('/', authMiddleware, async (req, res) => {
     };
 
     // Salva no cache por 30 minutos
-    await redis.set(cacheKey, JSON.stringify(response), 'EX', 1800);
+    await redis.set(cacheKey, JSON.stringify(response), 'EX', 1000);
 
     res.json(response);
   } catch (err) {

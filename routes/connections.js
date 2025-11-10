@@ -23,19 +23,29 @@ router.post('/', authMiddleware, async (req, res) => {
   const { nome, agente_id, numero } = req.body;
   const user_id = req.userId;
 
-  // Se existir o numero, adiciona 55 no começo se ainda não tiver, e valida formato
-  let formattedNumero = numero;
-  if (numero) {
-    // Remove caracteres não numéricos
-    formattedNumero = numero.replace(/\D/g, '');
-    // Adiciona 55 se não começar com 55
-    if (!formattedNumero.startsWith('55')) {
-      formattedNumero = '55' + formattedNumero;
-    }
-    // Verifica se ficou no formato correto (apenas dígitos, pelo menos 12 caracteres)
-    if (!/^\d{12,15}$/.test(formattedNumero)) {
-      return sendError(res, 400, 'Número inválido. Deve estar no formato 556492434104.');
-    }
+  // ---- INÍCIO DA LÓGICA AJUSTADA ----
+
+  let numeroFormatado = numero
+
+  // 2. Remove o nono dígito extra, se existir (ex: 64992434104 → 6492434104)
+  if (numeroFormatado.length === 11 && numeroFormatado.charAt(2) === '9') {
+    const ddd = numeroFormatado.substring(0, 2);
+    const numeroSem9 = numeroFormatado.substring(3);
+    numeroFormatado = `${ddd}${numeroSem9}`;
+  }
+
+  // 3. Adiciona novamente o prefixo 55 (ficando 12 dígitos no total)
+  numeroFormatado = `55${numeroFormatado}`;
+
+  // ---- FIM DA LÓGICA AJUSTADA ----
+
+  // 4. Valida formato final (deve ter exatamente 12 dígitos)
+  if (!/^\d{12}$/.test(numeroFormatado)) {
+    return sendError(
+      res,
+      400,
+      `Número inválido: ${numero}. O formato final esperado é 55 + DDD + número (12 dígitos, sem o nono dígito).`
+    );
   }
 
   if (!user_id || !nome) {
@@ -94,8 +104,9 @@ router.post('/', authMiddleware, async (req, res) => {
     // Criar instância no Evolution
     // Monta a URL do endpoint Evolution, adicionando ?number=numero se numero existir
     let evolutionUrl = `${process.env.EVOLUTION_API_URL}/instance/create`;
-    if (formattedNumero) {
-      evolutionUrl += `?number=${encodeURIComponent(formattedNumero)}`;
+    if (numeroFormatado) {
+      evolutionUrl += `?number=${encodeURIComponent(numeroFormatado)}`;
+      console.log(numeroFormatado)
     }
 
     const evolutionResponse = await axios.post(

@@ -429,7 +429,9 @@ router.post('/webhook', express.raw({ type: 'application/json' }), async (req, r
         try {
           await axios.post(process.env.N8N_WEBHOOK_USER_CREATED, {
             numero: numeroFormatado,
-            userId
+            userId,
+            customerEmail,
+            tempPassword
           });
         } catch (webhookErr) {
           console.error('Erro ao enviar webhook para n8n:', webhookErr.message);
