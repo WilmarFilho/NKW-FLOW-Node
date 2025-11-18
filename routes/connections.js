@@ -25,27 +25,31 @@ router.post('/', authMiddleware, async (req, res) => {
 
   // ---- INÍCIO DA LÓGICA AJUSTADA ----
 
-  let numeroFormatado = numero
+  let numeroFormatado = null
 
-  // 2. Remove o nono dígito extra, se existir (ex: 64992434104 → 6492434104)
-  if (numeroFormatado.length === 11 && numeroFormatado.charAt(2) === '9') {
-    const ddd = numeroFormatado.substring(0, 2);
-    const numeroSem9 = numeroFormatado.substring(3);
-    numeroFormatado = `${ddd}${numeroSem9}`;
-  }
+  if (numero) {
+    numeroFormatado = numero
 
-  // 3. Adiciona novamente o prefixo 55 (ficando 12 dígitos no total)
-  numeroFormatado = `55${numeroFormatado}`;
+    // 2. Remove o nono dígito extra, se existir (ex: 64992434104 → 6492434104)
+    if (numeroFormatado.length === 11 && numeroFormatado.charAt(2) === '9') {
+      const ddd = numeroFormatado.substring(0, 2);
+      const numeroSem9 = numeroFormatado.substring(3);
+      numeroFormatado = `${ddd}${numeroSem9}`;
+    }
 
-  // ---- FIM DA LÓGICA AJUSTADA ----
+    // 3. Adiciona novamente o prefixo 55 (ficando 12 dígitos no total)
+    numeroFormatado = `55${numeroFormatado}`;
 
-  // 4. Valida formato final (deve ter exatamente 12 dígitos)
-  if (!/^\d{12}$/.test(numeroFormatado)) {
-    return sendError(
-      res,
-      400,
-      `Número inválido: ${numero}. O formato final esperado é 55 + DDD + número (12 dígitos, sem o nono dígito).`
-    );
+    // ---- FIM DA LÓGICA AJUSTADA ----
+
+    // 4. Valida formato final (deve ter exatamente 12 dígitos)
+    if (!/^\d{12}$/.test(numeroFormatado)) {
+      return sendError(
+        res,
+        400,
+        `Número inválido: ${numero}. O formato final esperado é 55 + DDD + número (12 dígitos, sem o nono dígito).`
+      );
+    }
   }
 
   if (!user_id || !nome) {
