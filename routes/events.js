@@ -235,564 +235,589 @@ async function processarMensagemComMedia(data, connectionId, remetente, tipoMedi
 
 router.post('/dispatch', async (req, res) => {
 
-    const { instance: connection, event, data } = req.body;
+    try {
 
-    console.log('Chegou evento: ', connection, ' + ', event, ' + ', data)
+        try {
+            const { instance: connection, event, data } = req.body;
 
-    const { data: fullConnection } = await supabase
-        .from('connections')
-        .select(`
+            console.log('Chegou evento: ', connection, ' + ', event, ' + ', data)
+
+            const { data: fullConnection } = await supabase
+                .from('connections')
+                .select(`
                 *,
                 user:users(id, auth_id, nome, email, notificacao_para_entrar_conversa),
                 agente:agents(id, tipo_de_agente, prompt_do_agente)
             `)
-        .eq('id', connection)
-        .single();
+                .eq('id', connection)
+                .single();
 
-    if (!fullConnection) {
-        return res.status(400).json({ error: 'Conexão não encontrada ou desativada' });
-    }
+            if (!fullConnection) {
+                return res.status(400).json({ error: 'Conexão não encontrada ou desativada' });
+            }
 
-    // Busca os números dos atendentes desta conexão
-    const { data: attendantsData, error: attendantsError } = await supabase
-        .from('attendants')
-        .select(`
+            // Busca os números dos atendentes desta conexão
+            const { data: attendantsData, error: attendantsError } = await supabase
+                .from('attendants')
+                .select(`
     user_id,
     users!attendants_user_id_fkey (
       numero,
       status
     )
   `)
-        .eq('connection_id', connection)
-        .eq('users.status', true);
+                .eq('connection_id', connection)
+                .eq('users.status', true);
 
-    // Extrai apenas os números dos atendentes (filtra nulos)
-    let numerosAtendentes = attendantsData
-        ?.map(att => att.users?.numero)
-        .filter(numero => numero) || [];
+            // Extrai apenas os números dos atendentes (filtra nulos)
+            let numerosAtendentes = attendantsData
+                ?.map(att => att.users?.numero)
+                .filter(numero => numero) || [];
 
-    if (!fullConnection.user.notificacao_para_entrar_conversa) {
-        numerosAtendentes = []
-    }
+            if (!fullConnection.user.notificacao_para_entrar_conversa) {
+                numerosAtendentes = []
+            }
 
-    // Verifica o plano do usuário na tabela subscriptions
-    const { data: subscription, error: subError } = await supabase
-        .from('subscriptions')
-        .select('plano')
-        .eq('user_id', fullConnection.user_id)
-        .single();
+            // Verifica o plano do usuário na tabela subscriptions
+            const { data: subscription, error: subError } = await supabase
+                .from('subscriptions')
+                .select('plano')
+                .eq('user_id', fullConnection.user_id)
+                .single();
 
-    if (subError || !subscription) {
-        return res.status(400).json({ error: 'Plano do usuário não encontrado' });
-    }
+            if (subError || !subscription) {
+                return res.status(400).json({ error: 'Plano do usuário não encontrado' });
+            }
 
-    const userId = fullConnection.user.id;
-    const authUserid = fullConnection.user.auth_id;
+            const userId = fullConnection.user.id;
+            const authUserid = fullConnection.user.auth_id;
 
-    let enrichedEvent = {
-        event,
-        state: data.state,
-        connection: fullConnection
-    };
+            let enrichedEvent = {
+                event,
+                state: data.state,
+                connection: fullConnection
+            };
 
-    if (
-        data.message &&
-        (
-            data.message.editedMessage ||
-            data.message.reactionMessage ||
-            data.message.templateMessage ||
-            Object.keys(data.message).length === 0
-        )
-    ) {
-        return res.status(200).json({ event: 'ignored', message: 'Mensagem ignorada (editada, reação ou vazia)' });
-    }
+            if (
+                data.message &&
+                (
+                    data.message.editedMessage ||
+                    data.message.reactionMessage ||
+                    data.message.templateMessage ||
+                    Object.keys(data.message).length === 0
+                )
+            ) {
+                return res.status(200).json({ event: 'ignored', message: 'Mensagem ignorada (editada, reação ou vazia)' });
+            }
 
-    if (event === 'connection.update' && data.state === 'open' && data.wuid) {
+            if (event === 'connection.update' && data.state === 'open' && data.wuid) {
 
-        const numero = data.wuid.split('@')[0];
+                const numero = data.wuid.split('@')[0];
 
-        const { data: currentConnection, error: connError } = await supabase
-            .from('connections')
-            .select('id, user_id')
-            .eq('id', connection)
-            .maybeSingle();
+                const { data: currentConnection, error: connError } = await supabase
+                    .from('connections')
+                    .select('id, user_id')
+                    .eq('id', connection)
+                    .maybeSingle();
 
-        if (connError || !currentConnection) {
-            enrichedEvent.event = 'error';
-            enrichedEvent.message = 'Conexão não encontrada';
-        }
+                if (connError || !currentConnection) {
+                    enrichedEvent.event = 'error';
+                    enrichedEvent.message = 'Conexão não encontrada';
+                }
 
-        const { data: duplicate, error: dupError } = await supabase
-            .from('connections')
-            .select('id')
-            .eq('user_id', currentConnection.user_id)
-            .eq('numero', numero)
-            .neq('id', connection)
-            .maybeSingle();
+                const { data: duplicate, error: dupError } = await supabase
+                    .from('connections')
+                    .select('id')
+                    .eq('user_id', currentConnection.user_id)
+                    .eq('numero', numero)
+                    .neq('id', connection)
+                    .maybeSingle();
 
-        if (dupError) {
-            enrichedEvent.error = true;
-            enrichedEvent.message = 'Erro ao verificar duplicidade';
-        }
+                if (dupError) {
+                    enrichedEvent.error = true;
+                    enrichedEvent.message = 'Erro ao verificar duplicidade';
+                }
 
-        if (duplicate) {
-            enrichedEvent.error = true;
-            enrichedEvent.message = 'Conexao duplicada';
+                if (duplicate) {
+                    enrichedEvent.error = true;
+                    enrichedEvent.message = 'Conexao duplicada';
 
-            await supabase.from('connections').delete().eq('id', connection);
-            await axios.delete(`${process.env.EVOLUTION_API_URL}/instance/delete/${connection}`, { headers: { apikey: process.env.EVOLUTION_API_KEY } });
-        }
+                    await supabase.from('connections').delete().eq('id', connection);
+                    await axios.delete(`${process.env.EVOLUTION_API_URL}/instance/delete/${connection}`, { headers: { apikey: process.env.EVOLUTION_API_KEY } });
+                }
 
-        const { data: updatedConnection, error } = await supabase
-            .from('connections')
-            .update({
-                numero,
-                status: true
-            })
-            .eq('id', connection)
-            .select('*')
-            .maybeSingle();
+                const { data: updatedConnection, error } = await supabase
+                    .from('connections')
+                    .update({
+                        numero,
+                        status: true
+                    })
+                    .eq('id', connection)
+                    .select('*')
+                    .maybeSingle();
 
-        enrichedEvent.event = 'connection.update';
-        enrichedEvent.connection = updatedConnection;
+                enrichedEvent.event = 'connection.update';
+                enrichedEvent.connection = updatedConnection;
 
-    }
+            }
 
-    if (event === 'messages.upsert' || event === 'send.message') {
+            if (event === 'messages.upsert' || event === 'send.message') {
 
-        const rjid = extractRemoteJid(event, data);
+                const rjid = extractRemoteJid(event, data);
 
-        let contatoNumero = rjid.replaceAll('@s.whatsapp.net', '');
+                let contatoNumero = rjid.replaceAll('@s.whatsapp.net', '');
 
-        if (contatoNumero.endsWith('@lid')) {
-            contatoNumero = data?.key?.senderPn.replaceAll('@s.whatsapp.net', '');
-        }
+                if (contatoNumero.endsWith('@lid')) {
+                    contatoNumero = data?.key?.senderPn.replaceAll('@s.whatsapp.net', '');
+                }
 
-        // Remove sufixo do tipo ":63" se existir (ex: 556492954044:63 -> 556492954044)
-        if (/^\d+:\d+$/.test(contatoNumero)) {
-            contatoNumero = contatoNumero.split(':')[0];
-        }
+                // Remove sufixo do tipo ":63" se existir (ex: 556492954044:63 -> 556492954044)
+                if (/^\d+:\d+$/.test(contatoNumero)) {
+                    contatoNumero = contatoNumero.split(':')[0];
+                }
 
-        // 🧠 NOVA REGRA: Desativa IA do chat se o número remetente for de um atendente do mesmo user
-        try {
-            // Busca todos os atendentes vinculados ao mesmo usuário dono da conexão
-            const { data: atendentesDoUser, error: atendentesUserError } = await supabase
-                .from('attendants')
-                .select(`
+                // 🧠 NOVA REGRA: Desativa IA do chat se o número remetente for de um atendente do mesmo user
+                try {
+                    // Busca todos os atendentes vinculados ao mesmo usuário dono da conexão
+                    const { data: atendentesDoUser, error: atendentesUserError } = await supabase
+                        .from('attendants')
+                        .select(`
             users!attendants_user_id_fkey(numero),
             connection:connections(user_id)
         `)
-                .eq('connections.user_id', fullConnection.user_id);
+                        .eq('connections.user_id', fullConnection.user_id);
 
-            if (atendentesUserError) {
-                console.error('Erro ao buscar atendentes do usuário:', atendentesUserError.message);
-            } else if (atendentesDoUser?.length) {
-                // Extrai e normaliza números
-                const numerosAtendentesUser = atendentesDoUser
-                    .map(att => att.users?.numero)
-                    .filter(Boolean)
-                    .map(n => n.replace(/\D/g, ''));
+                    if (atendentesUserError) {
+                        console.error('Erro ao buscar atendentes do usuário:', atendentesUserError.message);
+                    } else if (atendentesDoUser?.length) {
+                        // Extrai e normaliza números
+                        const numerosAtendentesUser = atendentesDoUser
+                            .map(att => att.users?.numero)
+                            .filter(Boolean)
+                            .map(n => n.replace(/\D/g, ''));
 
-                const numeroNormalizado = contatoNumero.replace(/\D/g, '');
+                        const numeroNormalizado = contatoNumero.replace(/\D/g, '');
 
-                // Verifica se o remetente é um atendente
-                if (numerosAtendentesUser.includes(numeroNormalizado)) {
+                        // Verifica se o remetente é um atendente
+                        if (numerosAtendentesUser.includes(numeroNormalizado)) {
 
-                    // Busca o chat existente dessa conversa
-                    const { data: chatExistente } = await supabase
-                        .from('chats')
-                        .select('id, ia_ativa')
-                        .eq('connection_id', fullConnection.id)
-                        .eq('contato_numero', numeroNormalizado)
-                        .maybeSingle();
+                            // Busca o chat existente dessa conversa
+                            const { data: chatExistente } = await supabase
+                                .from('chats')
+                                .select('id, ia_ativa')
+                                .eq('connection_id', fullConnection.id)
+                                .eq('contato_numero', numeroNormalizado)
+                                .maybeSingle();
 
-                    // Se o chat existir e estiver com IA ativa, desativa
-                    if (chatExistente && chatExistente.ia_ativa) {
-                        await supabase
-                            .from('chats')
-                            .update({ ia_ativa: false })
-                            .eq('id', chatExistente.id);
+                            // Se o chat existir e estiver com IA ativa, desativa
+                            if (chatExistente && chatExistente.ia_ativa) {
+                                await supabase
+                                    .from('chats')
+                                    .update({ ia_ativa: false })
+                                    .eq('id', chatExistente.id);
 
-                    }
-                }
-            }
-        } catch (err) {
-            console.error('Erro ao validar se número é de atendente do usuário:', err);
-        }
-
-
-        const connectionId = fullConnection.id;
-
-        let chatId = null;
-        let chatCompleto = null;
-
-        // 2. Buscar todas as conexões do admin
-        const { data: adminConnections, error: adminConnError } = await supabase
-            .from('connections')
-            .select('id, numero')
-            .eq('user_id', fullConnection.user.id);
-
-        if (adminConnError) {
-            return res.status(400).json({ error: 'Erro ao buscar conexões do admin.' });
-        }
-
-        // 3. Verificar se existe outra conexão com o mesmo contatoNumero
-        const duplicateConn = adminConnections.find(conn => conn.numero === contatoNumero);
-
-        if (duplicateConn) {
-            return res.status(200).json({ event: 'ignored', message: 'Chat com número de uma conexão existente.' });
-        }
-
-        const { data: chatExistenteArray, error: chatBuscaError } = await supabase
-            .from('chats')
-            .select('*')
-            .eq('contato_numero', contatoNumero)
-            .eq('connection_id', connectionId)
-            .limit(1);
-
-        const chatExistente = chatExistenteArray[0]
-
-        if (chatExistente) {
-            // --- NOVA REGRA: Desativa IA se for message.upsert enviado pelo usuário ---
-            if (
-                event === 'messages.upsert' &&
-                data.key.fromMe &&
-                chatExistente.ia_ativa
-            ) {
-                try {
-                    // 🔎 Verifica se já existe pelo menos uma mensagem do remetente = 'Usuário' neste chat
-                    const { count: mensagensUsuario, error: countError } = await supabase
-                        .from('messages')
-                        .select('id', { count: 'exact', head: true })
-                        .eq('chat_id', chatExistente.id)
-                        .eq('remetente', 'Usuário');
-
-                    if (countError) {
-                        console.error('Erro ao contar mensagens do usuário:', countError.message);
-                    }
-
-                    // ✅ Só desativa a IA se houver ao menos uma mensagem do tipo 'Usuário'
-                    if (mensagensUsuario > 1) {
-                        await supabase
-                            .from('chats')
-                            .update({ ia_ativa: false })
-                            .eq('id', chatExistente.id);
-                        chatExistente.ia_ativa = false;
-                    } else {
-                        console.log(
-                            `IA mantida ativa: chat ${chatExistente.id} ainda não possui mensagens do tipo 'Usuário'.`
-                        );
+                            }
+                        }
                     }
                 } catch (err) {
-                    console.error('Erro ao verificar mensagens do chat antes de desativar IA:', err);
+                    console.error('Erro ao validar se número é de atendente do usuário:', err);
                 }
-            }
 
 
-            // --- NOVA REGRA: Ativa IA se usuário enviar a palavra-chave ---
-            if (
-                event === 'messages.upsert' &&
-                data.key.fromMe &&
-                !chatExistente.ia_ativa
-            ) {
-                // Busca a trigger word do admin
-                const { data: userData } = await supabase
-                    .from('users')
-                    .select('ai_trigger_word')
-                    .eq('id', fullConnection.user.id)
-                    .single();
+                const connectionId = fullConnection.id;
 
-                const triggerWord = userData?.ai_trigger_word?.trim()?.toLowerCase();
-                const mensagem = data.message?.conversation?.trim()?.toLowerCase();
+                let chatId = null;
+                let chatCompleto = null;
 
-                if (triggerWord && mensagem === triggerWord) {
-                    await supabase
+                // 2. Buscar todas as conexões do admin
+                const { data: adminConnections, error: adminConnError } = await supabase
+                    .from('connections')
+                    .select('id, numero')
+                    .eq('user_id', fullConnection.user.id);
+
+                if (adminConnError) {
+                    return res.status(400).json({ error: 'Erro ao buscar conexões do admin.' });
+                }
+
+                // 3. Verificar se existe outra conexão com o mesmo contatoNumero
+                const duplicateConn = adminConnections.find(conn => conn.numero === contatoNumero);
+
+                if (duplicateConn) {
+                    return res.status(200).json({ event: 'ignored', message: 'Chat com número de uma conexão existente.' });
+                }
+
+                const { data: chatExistenteArray, error: chatBuscaError } = await supabase
+                    .from('chats')
+                    .select('*')
+                    .eq('contato_numero', contatoNumero)
+                    .eq('connection_id', connectionId)
+                    .limit(1);
+
+                const chatExistente = chatExistenteArray[0]
+
+                if (chatExistente) {
+                    // --- NOVA REGRA: Desativa IA se for message.upsert enviado pelo usuário ---
+                    if (
+                        event === 'messages.upsert' &&
+                        data.key.fromMe &&
+                        chatExistente.ia_ativa
+                    ) {
+                        try {
+                            // 🔎 Verifica se já existe pelo menos uma mensagem do remetente = 'Usuário' neste chat
+                            const { count: mensagensUsuario, error: countError } = await supabase
+                                .from('messages')
+                                .select('id', { count: 'exact', head: true })
+                                .eq('chat_id', chatExistente.id)
+                                .eq('remetente', 'Usuário');
+
+                            if (countError) {
+                                console.error('Erro ao contar mensagens do usuário:', countError.message);
+                            }
+
+                            // ✅ Só desativa a IA se houver ao menos uma mensagem do tipo 'Usuário'
+                            if (mensagensUsuario > 1) {
+                                await supabase
+                                    .from('chats')
+                                    .update({ ia_ativa: false })
+                                    .eq('id', chatExistente.id);
+                                chatExistente.ia_ativa = false;
+                            } else {
+                                console.log(
+                                    `IA mantida ativa: chat ${chatExistente.id} ainda não possui mensagens do tipo 'Usuário'.`
+                                );
+                            }
+                        } catch (err) {
+                            console.error('Erro ao verificar mensagens do chat antes de desativar IA:', err);
+                        }
+                    }
+
+
+                    // --- NOVA REGRA: Ativa IA se usuário enviar a palavra-chave ---
+                    if (
+                        event === 'messages.upsert' &&
+                        data.key.fromMe &&
+                        !chatExistente.ia_ativa
+                    ) {
+                        // Busca a trigger word do admin
+                        const { data: userData } = await supabase
+                            .from('users')
+                            .select('ai_trigger_word')
+                            .eq('id', fullConnection.user.id)
+                            .single();
+
+                        const triggerWord = userData?.ai_trigger_word?.trim()?.toLowerCase();
+                        const mensagem = data.message?.conversation?.trim()?.toLowerCase();
+
+                        if (triggerWord && mensagem === triggerWord) {
+                            await supabase
+                                .from('chats')
+                                .update({ ia_ativa: true })
+                                .eq('id', chatExistente.id);
+                            chatExistente.ia_ativa = true;
+                        }
+                    }
+
+                    if (chatExistente.contato_nome === chatExistente.contato_numero && !data.key.fromMe) {
+                        await supabase
+                            .from('chats')
+                            .update({ contato_nome: data.pushName })
+                            .eq('id', chatExistente.id);
+                    }
+                    if (chatExistente.status === 'Close') {
+                        await supabase
+                            .from('chats')
+                            .update({ status: 'Open', ia_ativa: true, user_id: null })
+                            .eq('id', chatExistente.id);
+
+                        chatExistente.status = 'Open';
+                        chatExistente.ia_ativa = true;
+                    }
+                    chatId = chatExistente.id;
+                    chatCompleto = chatExistente;
+                } else {
+                    const { profilePictureUrl } = await buscarDadosContato(contatoNumero, connection);
+                    const isContatoIniciou = !data.key.fromMe;
+                    const nomeInicial = isContatoIniciou ? data.pushName : contatoNumero;
+
+
+
+
+                    const { data: novoChat, error: novoChatError } = await supabase
                         .from('chats')
-                        .update({ ia_ativa: true })
-                        .eq('id', chatExistente.id);
-                    chatExistente.ia_ativa = true;
+                        .upsert({
+                            contato_nome: nomeInicial,
+                            contato_numero: contatoNumero,
+                            connection_id: connectionId,
+                            ia_ativa: true,
+                            status: 'Open',
+                            foto_perfil: profilePictureUrl
+                        }, { onConflict: ['connection_id', 'contato_numero'] })
+                        .select()
+                        .single();
+
+                    console.log()
+
+                    chatId = novoChat.id;
+                    chatCompleto = novoChat;
                 }
-            }
 
-            if (chatExistente.contato_nome === chatExistente.contato_numero && !data.key.fromMe) {
-                await supabase
-                    .from('chats')
-                    .update({ contato_nome: data.pushName })
-                    .eq('id', chatExistente.id);
-            }
-            if (chatExistente.status === 'Close') {
-                await supabase
-                    .from('chats')
-                    .update({ status: 'Open', ia_ativa: true, user_id: null })
-                    .eq('id', chatExistente.id);
+                let remetente = (event === 'messages.upsert')
+                    ? (data.key.fromMe ? 'Usuário' : 'Contato')
+                    : 'Usuário';
 
-                chatExistente.status = 'Open';
-                chatExistente.ia_ativa = true;
-            }
-            chatId = chatExistente.id;
-            chatCompleto = chatExistente;
-        } else {
-            const { profilePictureUrl } = await buscarDadosContato(contatoNumero, connection);
-            const isContatoIniciou = !data.key.fromMe;
-            const nomeInicial = isContatoIniciou ? data.pushName : contatoNumero;
+                let quoteMessage = null;
+                let quoteId = null;
 
-            const { data: novoChat, error: novoChatError } = await supabase
-                .from('chats')
-                .upsert({
-                    contato_nome: nomeInicial,
-                    contato_numero: contatoNumero,
-                    connection_id: connectionId,
-                    ia_ativa: true,
-                    status: 'Open',
-                    foto_perfil: profilePictureUrl
-                }, { onConflict: ['connection_id', 'contato_numero'] })
-                .select()
-                .single();
+                if (data.contextInfo?.stanzaId) {
+                    const quotedStanzaId = data.contextInfo.stanzaId;
+                    const { data: msgCitada } = await supabase
+                        .from('messages')
+                        .select('id, mensagem, mimetype, remetente, base64')
+                        .eq('id', quotedStanzaId)
+                        .maybeSingle();
 
-            chatId = novoChat.id;
-            chatCompleto = novoChat;
-        }
+                    if (msgCitada) {
+                        quoteId = msgCitada.id;
+                        quoteMessage = msgCitada;
+                    }
+                }
 
-        let remetente = (event === 'messages.upsert')
-            ? (data.key.fromMe ? 'Usuário' : 'Contato')
-            : 'Usuário';
+                let novaMensagem = null;
 
-        let quoteMessage = null;
-        let quoteId = null;
+                // Mídias suportadas
+                if (data.message?.imageMessage) {
+                    novaMensagem = await processarMensagemComMedia(data, connectionId, remetente, 'image', {
+                        id: data.key.id,
+                        quote_id: quoteId,
+                        chat_id: chatId
+                    }, 'image/png');
+                } else if (data.message?.audioMessage) {
+                    novaMensagem = await processarMensagemComMedia(data, connectionId, remetente, 'audio', {
+                        id: data.key.id,
+                        quote_id: quoteId,
+                        chat_id: chatId
+                    }, 'audio/ogg');
+                } else if (data.message?.videoMessage) {
+                    novaMensagem = await processarMensagemComMedia(data, connectionId, remetente, 'video', {
+                        id: data.key.id,
+                        quote_id: quoteId,
+                        chat_id: chatId
+                    }, 'video/mp4');
+                } else if (data.message?.stickerMessage) {
+                    novaMensagem = await processarMensagemComMedia(data, connectionId, remetente, 'sticker', {
+                        id: data.key.id,
+                        quote_id: quoteId,
+                        chat_id: chatId
+                    }, 'image/webp');
+                } else if (data.message?.documentMessage) {
+                    novaMensagem = await processarMensagemComMedia(data, connectionId, remetente, 'document', {
+                        id: data.key.id,
+                        quote_id: quoteId,
+                        chat_id: chatId
+                    }, 'application/octet-stream');
+                }
 
-        if (data.contextInfo?.stanzaId) {
-            const quotedStanzaId = data.contextInfo.stanzaId;
-            const { data: msgCitada } = await supabase
-                .from('messages')
-                .select('id, mensagem, mimetype, remetente, base64')
-                .eq('id', quotedStanzaId)
-                .maybeSingle();
+                // Tipos não suportados
+                const unsupportedTypes = {
+                    eventMessage: { mensagem: '[Evento recebido]', mimetype: 'event/unsupported' },
+                    ptvMessage: { mensagem: '[Recado de Video recebido]', mimetype: 'ptv/unsupported' },
+                    pollCreationMessageV3: { mensagem: '[Enquete recebida]', mimetype: 'poll/unsupported' },
+                    interactiveMessage: { mensagem: '[Chave Pix Recebida]', mimetype: 'pix/unsupported' },
+                    locationMessage: { mensagem: '[Localização recebida]', mimetype: 'location/unsupported' },
+                    contactMessage: { mensagem: '[Contato recebido]', mimetype: 'contact/unsupported' },
+                    adReplyMessage: { mensagem: '[Anúncio ignorado]', mimetype: 'ads/unsupported' }
+                };
 
-            if (msgCitada) {
-                quoteId = msgCitada.id;
-                quoteMessage = msgCitada;
-            }
-        }
+                if (!novaMensagem) {
+                    // Se não for mídia, verifica tipos não suportados
+                    for (const [key, value] of Object.entries(unsupportedTypes)) {
+                        if (data.message?.[key]) {
+                            novaMensagem = {
+                                id: data.key.id,
+                                chat_id: chatId,
+                                remetente,
+                                ...value,
+                            };
+                            break;
+                        }
+                    }
+                }
 
-        let novaMensagem = null;
+                if (!novaMensagem) {
+                    // Se não for mídia nem tipo não suportado, salva como texto/conversation
+                    const textoMensagem =
+                        data.message?.conversation ||
+                        data.message?.extendedTextMessage?.text ||
+                        data.message?.ephemeralMessage?.message?.extendedTextMessage?.text ||
+                        null;
 
-        // Mídias suportadas
-        if (data.message?.imageMessage) {
-            novaMensagem = await processarMensagemComMedia(data, connectionId, remetente, 'image', {
-                id: data.key.id,
-                quote_id: quoteId,
-                chat_id: chatId
-            }, 'image/png');
-        } else if (data.message?.audioMessage) {
-            novaMensagem = await processarMensagemComMedia(data, connectionId, remetente, 'audio', {
-                id: data.key.id,
-                quote_id: quoteId,
-                chat_id: chatId
-            }, 'audio/ogg');
-        } else if (data.message?.videoMessage) {
-            novaMensagem = await processarMensagemComMedia(data, connectionId, remetente, 'video', {
-                id: data.key.id,
-                quote_id: quoteId,
-                chat_id: chatId
-            }, 'video/mp4');
-        } else if (data.message?.stickerMessage) {
-            novaMensagem = await processarMensagemComMedia(data, connectionId, remetente, 'sticker', {
-                id: data.key.id,
-                quote_id: quoteId,
-                chat_id: chatId
-            }, 'image/webp');
-        } else if (data.message?.documentMessage) {
-            novaMensagem = await processarMensagemComMedia(data, connectionId, remetente, 'document', {
-                id: data.key.id,
-                quote_id: quoteId,
-                chat_id: chatId
-            }, 'application/octet-stream');
-        }
-
-        // Tipos não suportados
-        const unsupportedTypes = {
-            eventMessage: { mensagem: '[Evento recebido]', mimetype: 'event/unsupported' },
-            ptvMessage: { mensagem: '[Recado de Video recebido]', mimetype: 'ptv/unsupported' },
-            pollCreationMessageV3: { mensagem: '[Enquete recebida]', mimetype: 'poll/unsupported' },
-            interactiveMessage: { mensagem: '[Chave Pix Recebida]', mimetype: 'pix/unsupported' },
-            locationMessage: { mensagem: '[Localização recebida]', mimetype: 'location/unsupported' },
-            contactMessage: { mensagem: '[Contato recebido]', mimetype: 'contact/unsupported' },
-            adReplyMessage: { mensagem: '[Anúncio ignorado]', mimetype: 'ads/unsupported' }
-        };
-
-        if (!novaMensagem) {
-            // Se não for mídia, verifica tipos não suportados
-            for (const [key, value] of Object.entries(unsupportedTypes)) {
-                if (data.message?.[key]) {
                     novaMensagem = {
                         id: data.key.id,
                         chat_id: chatId,
                         remetente,
-                        ...value,
+                        mensagem: textoMensagem,
+                        quote_id: quoteId,
                     };
-                    break;
+                }
+
+                const { data: msgCriada, error: msgError } = await supabase
+                    .from('messages')
+                    .insert(novaMensagem)
+                    .select()
+                    .single();
+
+                enrichedEvent.message = {
+                    ...msgCriada,
+                    quote_message: quoteMessage || null,
+                };
+
+                enrichedEvent.chat = chatCompleto || chatExistente;
+
+            }
+
+            if (event === 'messages.delete') {
+                let whatsappId;
+                if (data?.remoteJid && data?.id) whatsappId = data.id;
+                if (data?.key?.id) whatsappId = data.key.id;
+
+                if (!whatsappId) {
+                    enrichedEvent.event = 'error';
+                    enrichedEvent.message = 'invalid_payload, dados insuficientes';
+                }
+
+                const { data: msg } = await supabase
+                    .from("messages")
+                    .select("id, chat_id")
+                    .eq("id", whatsappId)
+                    .single();
+
+                await supabase
+                    .from("messages")
+                    .update({ excluded: true })
+                    .eq("id", msg.id);
+
+                enrichedEvent.deletedMessage = { id: msg.id, chat_id: msg.chat_id };
+
+            }
+
+            if (eventClientsByUser[authUserid]) {
+                for (const client of eventClientsByUser[authUserid]) {
+                    client.write(`data: ${JSON.stringify(enrichedEvent)}\n\n`);
                 }
             }
+
+            // 🔴 Envia também para atendentes dessa conexão
+            const connectionKey = `connection:${fullConnection.id}`;
+            if (eventClientsByUser[connectionKey]) {
+                for (const client of eventClientsByUser[connectionKey]) {
+                    client.write(`data: ${JSON.stringify(enrichedEvent)}\n\n`);
+                }
+            }
+
+            if ((event === 'connection.update' && (data.state === 'close' || data.state === 'connecting'))) {
+
+                const { data: updatedConnection, error } = await supabase
+                    .from('connections')
+                    .update({
+                        status: false
+                    })
+                    .eq('id', connection)
+                    .select('*')
+                    .maybeSingle();
+
+            }
+
+            // Detecta o tipo da mensagem
+            let tipoMensagem = 'outros';
+            let isDocumento = false;
+
+            if (data.message) {
+                if (data.message.imageMessage) {
+                    tipoMensagem = 'imagem';
+                } else if (data.message.audioMessage) {
+                    tipoMensagem = 'audio';
+                } else if (data.message.documentMessage?.mimetype === 'application/pdf') {
+                    isDocumento = true;
+                    tipoMensagem = 'PDF';
+                } else if (data.message.documentMessage?.mimetype === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet') {
+                    tipoMensagem = 'XLS';
+                    isDocumento = true;
+                } else if (
+                    data.message.conversation ||
+                    data.message.extendedTextMessage?.text ||
+                    data.message.ephemeralMessage?.message?.extendedTextMessage?.text
+                ) {
+                    tipoMensagem = 'texto';
+                }
+            }
+
+            const { data: ragData, error: ragError } = await supabaseRAG
+                .from('rag_status')
+                .select('status_conhecimento')
+                .eq('user_id', fullConnection.user.id)
+                .maybeSingle();
+
+            if (enrichedEvent.error) {
+                console.log('erro')
+                return res.status(400).json(enrichedEvent);
+            } else {
+                if (event === 'connection.update') {
+                    await axios.post(process.env.N8N_HOST + '/webhook/evolution', {
+                        ragData,
+                        numerosAtendentes,
+                        chat: enrichedEvent.chat || null,
+                        event: event,
+                        data: data,
+                        subscription,
+                        isDocumento,
+                        tipo_mensagem: tipoMensagem,
+                        connection: fullConnection,
+                    },);
+                } if (event === 'messages.upsert') {
+                    // 🔹 Pega o número (normalizado) do contato
+                    const rjid = extractRemoteJid(event, data);
+
+                    // 1. Define a URL de webhook para esta rota
+                    const dispatchWebhookUrl = process.env.N8N_HOST + '/webhook/evolution';
+
+                    aggregateHttpFlood(
+                        fullConnection.id,
+                        rjid,
+                        { // enrichedEvent object
+                            ragData,
+                            numerosAtendentes,
+                            chat: enrichedEvent.chat || null,
+                            event: event,
+                            data: data,
+                            subscription,
+                            isDocumento,
+                            tipo_mensagem: tipoMensagem,
+                            connection: fullConnection,
+                        },
+                        res,
+                        dispatchWebhookUrl // 2. Passa a URL para a função
+                    );
+                }
+
+                // Retorno imediato pro Evolution
+                return res.status(200).json({ status: 'received' });
+            }
+        } catch (err) {
+            console.error("🔥 ERRO INTERNO NO BLOCO PRINCIPAL /dispatch:", err);
         }
 
-        if (!novaMensagem) {
-            // Se não for mídia nem tipo não suportado, salva como texto/conversation
-            const textoMensagem =
-                data.message?.conversation ||
-                data.message?.extendedTextMessage?.text ||
-                data.message?.ephemeralMessage?.message?.extendedTextMessage?.text ||
-                null;
+        // ⚠️ IMPORTANTE: responder sempre sem quebrar fluxo
+        return res.status(200).json({ status: "received-safe" });
 
-            novaMensagem = {
-                id: data.key.id,
-                chat_id: chatId,
-                remetente,
-                mensagem: textoMensagem,
-                quote_id: quoteId,
-            };
+    } catch (fatalError) {
+        console.error("💀 ERRO FATAL NO /dispatch (MAS SERVER CONTINUOU):", fatalError);
+
+        // Envia retorno seguro mesmo assim
+        try {
+            return res.status(200).json({ status: "received-force" });
+        } catch (ignored) {
+            console.error("Erro ao enviar resposta final:", ignored);
         }
-
-        const { data: msgCriada, error: msgError } = await supabase
-            .from('messages')
-            .insert(novaMensagem)
-            .select()
-            .single();
-
-        enrichedEvent.message = {
-            ...msgCriada,
-            quote_message: quoteMessage || null,
-        };
-
-        enrichedEvent.chat = chatCompleto || chatExistente;
-
-    }
-
-    if (event === 'messages.delete') {
-        let whatsappId;
-        if (data?.remoteJid && data?.id) whatsappId = data.id;
-        if (data?.key?.id) whatsappId = data.key.id;
-
-        if (!whatsappId) {
-            enrichedEvent.event = 'error';
-            enrichedEvent.message = 'invalid_payload, dados insuficientes';
-        }
-
-        const { data: msg } = await supabase
-            .from("messages")
-            .select("id, chat_id")
-            .eq("id", whatsappId)
-            .single();
-
-        await supabase
-            .from("messages")
-            .update({ excluded: true })
-            .eq("id", msg.id);
-
-        enrichedEvent.deletedMessage = { id: msg.id, chat_id: msg.chat_id };
-
-    }
-
-    if (eventClientsByUser[authUserid]) {
-        for (const client of eventClientsByUser[authUserid]) {
-            client.write(`data: ${JSON.stringify(enrichedEvent)}\n\n`);
-        }
-    }
-
-    // 🔴 Envia também para atendentes dessa conexão
-    const connectionKey = `connection:${fullConnection.id}`;
-    if (eventClientsByUser[connectionKey]) {
-        for (const client of eventClientsByUser[connectionKey]) {
-            client.write(`data: ${JSON.stringify(enrichedEvent)}\n\n`);
-        }
-    }
-
-    if (( event === 'connection.update' && ( data.state === 'close' || data.state === 'connecting' ) )) {
-
-        const { data: updatedConnection, error } = await supabase
-            .from('connections')
-            .update({
-                status: false
-            })
-            .eq('id', connection)
-            .select('*')
-            .maybeSingle();
-
-    }
-
-    // Detecta o tipo da mensagem
-    let tipoMensagem = 'outros';
-    let isDocumento = false;
-
-    if (data.message) {
-        if (data.message.imageMessage) {
-            tipoMensagem = 'imagem';
-        } else if (data.message.audioMessage) {
-            tipoMensagem = 'audio';
-        } else if (data.message.documentMessage?.mimetype === 'application/pdf') {
-            isDocumento = true;
-            tipoMensagem = 'PDF';
-        } else if (data.message.documentMessage?.mimetype === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet') {
-            tipoMensagem = 'XLS';
-            isDocumento = true;
-        } else if (
-            data.message.conversation ||
-            data.message.extendedTextMessage?.text ||
-            data.message.ephemeralMessage?.message?.extendedTextMessage?.text
-        ) {
-            tipoMensagem = 'texto';
-        }
-    }
-
-    const { data: ragData, error: ragError } = await supabaseRAG
-        .from('rag_status')
-        .select('status_conhecimento')
-        .eq('user_id', fullConnection.user.id)
-        .maybeSingle();
-
-    if (enrichedEvent.error) {
-        console.log('erro')
-        return res.status(400).json(enrichedEvent);
-    } else {
-        if (event === 'connection.update') {
-            await axios.post(process.env.N8N_HOST + '/webhook/evolution', {
-                ragData,
-                numerosAtendentes,
-                chat: enrichedEvent.chat || null,
-                event: event,
-                data: data,
-                subscription,
-                isDocumento,
-                tipo_mensagem: tipoMensagem,
-                connection: fullConnection,
-            },);
-        } if (event === 'messages.upsert') {
-            // 🔹 Pega o número (normalizado) do contato
-            const rjid = extractRemoteJid(event, data);
-
-            // 1. Define a URL de webhook para esta rota
-            const dispatchWebhookUrl = process.env.N8N_HOST + '/webhook/evolution';
-
-            aggregateHttpFlood(
-                fullConnection.id,
-                rjid,
-                { // enrichedEvent object
-                    ragData,
-                    numerosAtendentes,
-                    chat: enrichedEvent.chat || null,
-                    event: event,
-                    data: data,
-                    subscription,
-                    isDocumento,
-                    tipo_mensagem: tipoMensagem,
-                    connection: fullConnection,
-                },
-                res,
-                dispatchWebhookUrl // 2. Passa a URL para a função
-            );
-        }
-
-        // Retorno imediato pro Evolution
-        return res.status(200).json({ status: 'received' });
     }
 
 });
