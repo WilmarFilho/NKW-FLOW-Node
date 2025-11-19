@@ -74,7 +74,7 @@ router.get('/', authMiddleware, async (req, res) => {
     if (error) return res.status(500).json({ error: 'Erro ao listar atendentes.' });
 
     // Cacheia por 30 minutos
-    await redis.set(cacheKey, JSON.stringify(data), 'EX', 1800);
+    await redis.set(cacheKey, JSON.stringify(data), 'EX', 70);
 
     res.status(200).json(data);
   } catch (err) {
