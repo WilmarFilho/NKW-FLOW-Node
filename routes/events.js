@@ -390,6 +390,8 @@ router.post('/dispatch', async (req, res) => {
                         // Verifica se o remetente é um atendente
                         if (numerosAtendentesUser.includes(numeroNormalizado)) {
 
+                            console.log('teste1' + fullConnection.id, numeroNormalizado)
+
                             // Busca o chat existente dessa conversa
                             const { data: chatExistente } = await supabase
                                 .from('chats')
@@ -398,6 +400,8 @@ router.post('/dispatch', async (req, res) => {
                                 .eq('contato_numero', numeroNormalizado)
                                 .maybeSingle();
 
+
+                        console.log(chatExistente.id)
                             // Se o chat existir e estiver com IA ativa, desativa
                             if (chatExistente && chatExistente.ia_ativa) {
                                 await supabase
@@ -445,7 +449,7 @@ router.post('/dispatch', async (req, res) => {
                 const chatExistente = chatExistenteArray[0]
 
                 if (chatExistente) {
-                    
+
                     // --- NOVA REGRA: Desativa IA se for message.upsert enviado pelo usuário ---
                     if (
                         event === 'messages.upsert' &&
@@ -491,6 +495,7 @@ router.post('/dispatch', async (req, res) => {
                             .eq('id', chatExistente.id);
                     }
                     if (chatExistente.status === 'Close') {
+                        console.log('teste3' + chatExistente.id)
                         await supabase
                             .from('chats')
                             .update({ status: 'Open', ia_ativa: true, user_id: null })
