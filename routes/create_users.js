@@ -318,11 +318,11 @@ router.post('/webhook', express.raw({ type: 'application/json' }), async (req, r
         }
 
         switch (priceId) {
-          case 'price_1SEBOjDLO1TMGeDVPT9tyv52': // Anual
+          case 'price_1SF2owDLO1TMGeDV9sqYrnZ9': // Anual
             plano = 'premium';
             periodo = 'anual';
             break;
-          case 'price_1SDxqnDLO1TMGeDVwcJHs3N9': // Mensal
+          case 'price_1SF2o0DLO1TMGeDVwxi2rZt6': // Mensal
             plano = 'premium';
             periodo = 'mensal';
             break;
@@ -330,19 +330,19 @@ router.post('/webhook', express.raw({ type: 'application/json' }), async (req, r
             plano = 'premium';
             periodo = 'mensal';
             break;
-          case 'price_1SEBQLDLO1TMGeDVwtIVTcks': // Anual
+          case 'price_1SF2zxDLO1TMGeDVInQD6VxV': // Anual
             plano = 'basico';
             periodo = 'anual';
             break;
-          case 'price_1SDxmcDLO1TMGeDVckB3Z8NY': // Mensal
+          case 'price_1SF2zYDLO1TMGeDV5OXvItPo': // Mensal
             plano = 'basico';
             periodo = 'mensal';
             break;
-          case 'price_1SEBPhDLO1TMGeDVNw911b12': // Anual
+          case 'price_1SF2wYDLO1TMGeDVxRqBIsxx': // Anual
             plano = 'intermediario';
             periodo = 'anual';
             break;
-          case 'price_1SDxorDLO1TMGeDVy39YaDVO': // Mensal
+          case 'price_1SF2w4DLO1TMGeDVhKOUUGN8': // Mensal
             plano = 'intermediario';
             periodo = 'mensal';
             break;
