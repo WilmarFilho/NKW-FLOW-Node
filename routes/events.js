@@ -390,8 +390,6 @@ router.post('/dispatch', async (req, res) => {
                         // Verifica se o remetente é um atendente
                         if (numerosAtendentesUser.includes(numeroNormalizado)) {
 
-                            console.log('teste1' + fullConnection.id, numeroNormalizado)
-
                             // Busca o chat existente dessa conversa
                             const { data: chatExistente } = await supabase
                                 .from('chats')
@@ -401,7 +399,7 @@ router.post('/dispatch', async (req, res) => {
                                 .maybeSingle();
 
 
-                        console.log(chatExistente.id)
+                        
                             // Se o chat existir e estiver com IA ativa, desativa
                             if (chatExistente && chatExistente.ia_ativa) {
                                 await supabase
