@@ -396,7 +396,7 @@ router.post('/webhook', express.raw({ type: 'application/json' }), async (req, r
 
           userId = userData.id;
         } else {
-          await supabase.auth.admin.updateUser(existingUser.auth_id, { password: tempPassword });
+          await supabase.auth.admin.updateUserById(existingUser.auth_id, { password: tempPassword });
 
           // Envia email com nova senha usando template
           try {

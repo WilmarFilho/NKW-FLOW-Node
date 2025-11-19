@@ -357,6 +357,7 @@ router.post('/dispatch', async (req, res) => {
                 let contatoNumero = rjid.replaceAll('@s.whatsapp.net', '');
 
                 if (contatoNumero.endsWith('@lid')) {
+                    console.log(data)
                     contatoNumero = data?.key?.senderPn.replaceAll('@s.whatsapp.net', '');
                 }
 

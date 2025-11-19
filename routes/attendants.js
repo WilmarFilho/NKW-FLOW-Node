@@ -55,12 +55,6 @@ router.get('/', authMiddleware, async (req, res) => {
     const admin_id = req.authId;
     if (!(await isAdmin(admin_id))) return res.status(403).json({ error: 'Apenas admins podem listar atendentes.' });
 
-    const cacheKey = `attendants:${admin_id}`;
-    const cached = await redis.get(cacheKey);
-    if (cached) {
-      return res.status(200).json(JSON.parse(cached));
-    }
-
     const { data, error } = await supabase
       .from('attendants')
       .select(`
@@ -73,8 +67,6 @@ router.get('/', authMiddleware, async (req, res) => {
 
     if (error) return res.status(500).json({ error: 'Erro ao listar atendentes.' });
 
-    // Cacheia por 30 minutos
-    await redis.set(cacheKey, JSON.stringify(data), 'EX', 70);
 
     res.status(200).json(data);
   } catch (err) {
