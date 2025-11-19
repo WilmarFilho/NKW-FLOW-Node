@@ -27,11 +27,7 @@ function aggregateHttpFlood(connectionId, numero, enrichedEvent, res, webhookUrl
     const key = `${connectionId}:${numero}`;
     const now = Date.now();
 
-    console.log('Caiu no aggregate: ', enrichedEvent)
-
     if (!httpFloodBuckets.has(key)) {
-        console.log('Caiu no if do aggregate: ', enrichedEvent)
-
         // cria novo bucket
         const timer = setTimeout(() => flushBucket(key), HTTP_FLOOD_TIMEOUT);
         httpFloodBuckets.set(key, {
@@ -42,8 +38,6 @@ function aggregateHttpFlood(connectionId, numero, enrichedEvent, res, webhookUrl
             webhookUrl: webhookUrl // 2. Armazenamos a URL no bucket
         });
     } else {
-        console.log('Caiu no else do aggregate: ', enrichedEvent)
-
         // atualiza bucket existente
         const bucket = httpFloodBuckets.get(key);
         bucket.events.push(enrichedEvent);
@@ -68,14 +62,11 @@ async function flushBucket(key) {
         events: bucket.events,
     };
 
-    console.log('Caiu no flush: ', groupedResponse)
-
 
     try {
         // ✅ Envia agrupamento para o Webhook correto
         if (targetWebhookUrl) {
             await axios.post(targetWebhookUrl, groupedResponse);
-            console.log('mandou pro n8n')
         } else {
             console.warn('⚠️ Webhook URL não configurada no bucket. Nenhum envio realizado.');
         }
@@ -239,8 +230,6 @@ router.post('/dispatch', async (req, res) => {
 
         try {
             const { instance: connection, event, data } = req.body;
-
-            console.log('Chegou evento: ', connection, ' + ', event, ' + ', data)
 
             const { data: fullConnection } = await supabase
                 .from('connections')
@@ -456,41 +445,19 @@ router.post('/dispatch', async (req, res) => {
                 const chatExistente = chatExistenteArray[0]
 
                 if (chatExistente) {
+                    
                     // --- NOVA REGRA: Desativa IA se for message.upsert enviado pelo usuário ---
                     if (
                         event === 'messages.upsert' &&
                         data.key.fromMe &&
                         chatExistente.ia_ativa
                     ) {
-                        try {
-                            // 🔎 Verifica se já existe pelo menos uma mensagem do remetente = 'Usuário' neste chat
-                            const { count: mensagensUsuario, error: countError } = await supabase
-                                .from('messages')
-                                .select('id', { count: 'exact', head: true })
-                                .eq('chat_id', chatExistente.id)
-                                .eq('remetente', 'Usuário');
-
-                            if (countError) {
-                                console.error('Erro ao contar mensagens do usuário:', countError.message);
-                            }
-
-                            // ✅ Só desativa a IA se houver ao menos uma mensagem do tipo 'Usuário'
-                            if (mensagensUsuario > 1) {
-                                await supabase
-                                    .from('chats')
-                                    .update({ ia_ativa: false })
-                                    .eq('id', chatExistente.id);
-                                chatExistente.ia_ativa = false;
-                            } else {
-                                console.log(
-                                    `IA mantida ativa: chat ${chatExistente.id} ainda não possui mensagens do tipo 'Usuário'.`
-                                );
-                            }
-                        } catch (err) {
-                            console.error('Erro ao verificar mensagens do chat antes de desativar IA:', err);
-                        }
+                        await supabase
+                            .from('chats')
+                            .update({ ia_ativa: false })
+                            .eq('id', chatExistente.id);
+                        chatExistente.ia_ativa = false;
                     }
-
 
                     // --- NOVA REGRA: Ativa IA se usuário enviar a palavra-chave ---
                     if (
@@ -555,7 +522,6 @@ router.post('/dispatch', async (req, res) => {
                         .select()
                         .single();
 
-                    console.log()
 
                     chatId = novoChat.id;
                     chatCompleto = novoChat;
