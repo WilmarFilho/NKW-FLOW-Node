@@ -45,12 +45,15 @@ router.get('/', authMiddleware, async (req, res) => {
   const tokenUserId = req.user_id;
   const cacheKey = `user:${tokenUserId}`;
 
+
+
+
   try {
     // Tenta buscar do cache
-    const cached = await redis.get(cacheKey);
+    /*const cached = await redis.get(cacheKey);
     if (cached) {
       return res.json(JSON.parse(cached));
-    }
+    }*/
 
     // Busca usuário pelo auth_id
     const { data: user, error: userError } = await supabase
@@ -84,18 +87,26 @@ router.get('/', authMiddleware, async (req, res) => {
       if (attendant) {
         const { data: connection, error: connError } = await supabase
           .from('connections')
-          .select('id, nome')
+          .select('id, nome, user_id')
           .eq('id', attendant.connection_id)
           .single();
+
         if (connError) return sendError(res, 500, connError.message);
 
+        const { data: subscriptionAtendente, error: subscriptionError } = await supabase
+          .from('subscriptions')
+          .select('plano, status')
+          .eq('user_id', connection.user_id)
+          .maybeSingle();
+
+       
         const result = {
           ...user,
           role: 'attendant',
           connection_id: connection?.id,
           connection_nome: connection?.nome,
           user_admin_id: attendant.user_admin_id,
-          plano: subscription?.plano,
+          plano: subscriptionAtendente?.plano,
           subscription_status: subscription?.status
         };
         await redis.set(cacheKey, JSON.stringify(result), 'EX', 600);
@@ -181,7 +192,7 @@ router.put('/:id', authMiddleware, async (req, res) => {
       ];
     } else {
       // Atendente só pode alterar preferências de tela e sidebar
-      allowedFields = ['modo_tela', 'modo_side_bar'];
+      allowedFields = ['modo_tela', 'modo_side_bar', 'mostra_nome_mensagens'];
     }
 
     // Construir objeto de atualização
