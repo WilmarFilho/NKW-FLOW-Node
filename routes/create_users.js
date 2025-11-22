@@ -431,7 +431,8 @@ router.post('/webhook', express.raw({ type: 'application/json' }), async (req, r
             numero: numeroFormatado,
             userId,
             customerEmail,
-            tempPassword
+            tempPassword,
+            plano
           });
         } catch (webhookErr) {
           console.error('Erro ao enviar webhook para n8n:', webhookErr.message);
