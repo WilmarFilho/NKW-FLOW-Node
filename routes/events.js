@@ -400,7 +400,7 @@ router.post('/dispatch', async (req, res) => {
                                 .maybeSingle();
 
 
-                        
+
                             // Se o chat existir e estiver com IA ativa, desativa
                             if (chatExistente && chatExistente.ia_ativa) {
                                 await supabase
@@ -832,50 +832,58 @@ router.post('/dispatchColeta', async (req, res) => {
             });
         }
 
-        let tipoMensagem = 'outros';
-        let isDocumento = false;
+        const { data: subscription, error: subError } = await supabase
+            .from('subscriptions')
+            .select('plano')
+            .eq('user_id', userData.id)
+            .single();
 
-        if (data.message) {
-            if (data.message.imageMessage && data.message.documentMessage?.mimetype === 'image/jpeg' && data.message.documentMessage?.mimetype === 'image/png') {
-                tipoMensagem = 'imagem';
-            } else if (data.message.audioMessage) {
-                tipoMensagem = 'audio';
-            } else if (data.message.documentMessage?.mimetype === 'application/pdf') {
-                isDocumento = true;
-                tipoMensagem = 'PDF';
-            } else if (data.message.documentMessage?.mimetype === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet') {
-                tipoMensagem = 'XLS';
-                isDocumento = true;
-            } else if (
-                data.message.conversation ||
-                data.message.extendedTextMessage?.text ||
-                data.message.ephemeralMessage?.message?.extendedTextMessage?.text
-            ) {
-                tipoMensagem = 'texto';
+        if (subscription.plano !== 'basico') {
+            let tipoMensagem = 'outros';
+            let isDocumento = false;
+
+            if (data.message) {
+                if (data.message.imageMessage && data.message.documentMessage?.mimetype === 'image/jpeg' && data.message.documentMessage?.mimetype === 'image/png') {
+                    tipoMensagem = 'imagem';
+                } else if (data.message.audioMessage) {
+                    tipoMensagem = 'audio';
+                } else if (data.message.documentMessage?.mimetype === 'application/pdf') {
+                    isDocumento = true;
+                    tipoMensagem = 'PDF';
+                } else if (data.message.documentMessage?.mimetype === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet') {
+                    tipoMensagem = 'XLS';
+                    isDocumento = true;
+                } else if (
+                    data.message.conversation ||
+                    data.message.extendedTextMessage?.text ||
+                    data.message.ephemeralMessage?.message?.extendedTextMessage?.text
+                ) {
+                    tipoMensagem = 'texto';
+                }
             }
+
+            const coletaWebhookUrl = process.env.N8N_HOST + '/webhook/coleta';
+
+            // 2. Monta o payload (evento enriquecido)
+            const enrichedEvent = {
+                user: userData,
+                event,
+                data,
+                numero_extraido: contatoNumero,
+                remote_jid: rjid,
+                tipo_mensagem: tipoMensagem,
+                isDocumento,
+            };
+
+            // 3. Chama a função de agregação
+            aggregateHttpFlood(
+                connection,
+                contatoNumero,
+                enrichedEvent,
+                res,
+                coletaWebhookUrl
+            );
         }
-
-        const coletaWebhookUrl = process.env.N8N_HOST + '/webhook/coleta';
-
-        // 2. Monta o payload (evento enriquecido)
-        const enrichedEvent = {
-            user: userData,
-            event,
-            data,
-            numero_extraido: contatoNumero,
-            remote_jid: rjid,
-            tipo_mensagem: tipoMensagem,
-            isDocumento,
-        };
-
-        // 3. Chama a função de agregação
-        aggregateHttpFlood(
-            connection,
-            contatoNumero,
-            enrichedEvent,
-            res,
-            coletaWebhookUrl
-        );
 
         // 4. Retorno imediato pro Evolution
         return res.status(200).json({ status: 'received' });
