@@ -357,8 +357,11 @@ router.post('/dispatch', async (req, res) => {
                 let contatoNumero = rjid.replaceAll('@s.whatsapp.net', '');
 
                 if (contatoNumero.endsWith('@lid')) {
-                    console.log(data)
-                    contatoNumero = data?.key?.senderPn.replaceAll('@s.whatsapp.net', '');
+                   console.log('ABBA')
+                    const senderPn = data?.key?.senderPn;
+                    contatoNumero = senderPn 
+                        ? senderPn.replaceAll('@s.whatsapp.net', '') 
+                        : data?.key?.remoteJidAlt?.replaceAll('@s.whatsapp.net', '');
                 }
 
                 // Remove sufixo do tipo ":63" se existir (ex: 556492954044:63 -> 556492954044)
@@ -494,7 +497,6 @@ router.post('/dispatch', async (req, res) => {
                             .eq('id', chatExistente.id);
                     }
                     if (chatExistente.status === 'Close') {
-                        console.log('teste3' + chatExistente.id)
                         await supabase
                             .from('chats')
                             .update({ status: 'Open', ia_ativa: true, user_id: null })
@@ -728,7 +730,6 @@ router.post('/dispatch', async (req, res) => {
                 .maybeSingle();
 
             if (enrichedEvent.error) {
-                console.log('erro')
                 return res.status(400).json(enrichedEvent);
             } else {
                 if (event === 'connection.update') {
@@ -801,10 +802,14 @@ router.post('/dispatchColeta', async (req, res) => {
 
         let contatoNumero = rjid.replaceAll('@s.whatsapp.net', '');
 
-        if (contatoNumero.endsWith('@lid')) {
-            console.log(data)
-            contatoNumero = data?.key?.senderPn.replaceAll('@s.whatsapp.net', '');
+       if (contatoNumero.endsWith('@lid')) {
+           console.log('AA')
+            const senderPn = data?.key?.senderPn;
+            contatoNumero = senderPn 
+                ? senderPn.replaceAll('@s.whatsapp.net', '') 
+                : data?.key?.remoteJidAlt?.replaceAll('@s.whatsapp.net', '');
         }
+
 
         // Remove sufixo do tipo ":63" se existir
         if (/^\d+:\d+$/.test(contatoNumero)) {
