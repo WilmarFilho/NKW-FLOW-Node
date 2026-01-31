@@ -318,34 +318,28 @@ router.post('/webhook', express.raw({ type: 'application/json' }), async (req, r
         }
 
         switch (priceId) {
-          case 'price_1SF2owDLO1TMGeDV9sqYrnZ9': // Anual
-            plano = 'premium';
-            periodo = 'anual';
-            break;
-          case 'price_1SF2o0DLO1TMGeDVwxi2rZt6': // Mensal
+          
+
+          case 'price_1SvjsbAMBiim7SRbGHLQxkBr': // Mensal
             plano = 'premium';
             periodo = 'mensal';
             break;
-          case 'price_1SEBOyDLO1TMGeDVdyT1Dj9g': // Diario Testes
-            plano = 'premium';
-            periodo = 'mensal';
-            break;
-          case 'price_1SF2zxDLO1TMGeDVInQD6VxV': // Anual
-            plano = 'basico';
-            periodo = 'anual';
-            break;
-          case 'price_1SF2zYDLO1TMGeDV5OXvItPo': // Mensal
+         
+
+          case 'price_1Svjt0AMBiim7SRbcpFlOUDx': // Mensal
             plano = 'basico';
             periodo = 'mensal';
             break;
-          case 'price_1SF2wYDLO1TMGeDVxRqBIsxx': // Anual
-            plano = 'intermediario';
-            periodo = 'anual';
-            break;
-          case 'price_1SF2w4DLO1TMGeDVhKOUUGN8': // Mensal
+        
+
+
+          case 'price_1SvjtJAMBiim7SRbUpVjHa11': // Mensal
             plano = 'intermediario';
             periodo = 'mensal';
             break;
+
+
+
           default:
             throw new Error(`Price ID não mapeado: ${priceId}`);
         }
